@@ -2,79 +2,102 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: Arial, Helvetica, sans-serif;
-}
-
+/* Light, Natural Green Theme */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
+    --background: 120 100% 97%; /* #F0FFF0 Honeydew (Very light desaturated green) */
+    --foreground: 120 25% 10%; /* Dark Green */
+
+    --muted: 120 50% 90%; /* Lighter green for muted backgrounds */
+    --muted-foreground: 120 20% 40%; /* Softer dark green for muted text */
+
+    --popover: 120 100% 99%; /* Almost white with a hint of green */
+    --popover-foreground: 120 25% 10%; /* Dark Green */
+
+    --card: 120 100% 99%; /* Almost white with a hint of green */
+    --card-foreground: 120 25% 10%; /* Dark Green */
+
+    --border: 120 30% 80%; /* Softer green border */
+    --input: 120 30% 85%; /* Softer green input background */
+
+    --primary: 120 45% 55%; /* Medium vibrant green (main interactive) - based on #90EE90 but made more suitable for BG */
+    --primary-foreground: 120 75% 96%; /* Light text for primary elements */
+
+    --secondary: 120 50% 90%; /* Lighter green for secondary actions */
+    --secondary-foreground: 120 30% 30%; /* Darker green text for secondary */
+
+    --accent: 87 50% 70%; /* Soft yellow-green (highlights) - based on #BCE29E but adjusted */
+    --accent-foreground: 87 30% 20%; /* Dark text for accent elements */
+
+    --destructive: 0 72% 51%; /* Standard destructive red */
+    --destructive-foreground: 0 0% 98%; /* Light text for destructive */
+
+    --ring: 120 45% 55%; /* Ring color, same as primary */
+
     --radius: 0.5rem;
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
-  }
-  .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
-    --ring: 0 0% 83.1%;
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
+
+    --chart-1: 120 70% 50%;
+    --chart-2: 87 60% 45%;
     --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
+    --chart-4: 200 65% 60%;
     --chart-5: 340 75% 55%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* Sidebar specific colors */
+    --sidebar-background: 120 60% 92%; /* Slightly darker/more saturated than main bg */
+    --sidebar-foreground: 120 25% 10%;
+    --sidebar-primary: 120 45% 55%;
+    --sidebar-primary-foreground: 120 75% 96%;
+    --sidebar-accent: 87 50% 70%;
+    --sidebar-accent-foreground: 87 30% 20%;
+    --sidebar-border: 120 30% 75%;
+    --sidebar-ring: 120 45% 55%;
+  }
+
+  .dark {
+    --background: 120 25% 10%; /* Dark Green */
+    --foreground: 120 100% 97%; /* Honeydew (Very light desaturated green) */
+
+    --muted: 120 20% 15%;
+    --muted-foreground: 120 30% 70%;
+
+    --popover: 120 25% 8%;
+    --popover-foreground: 120 100% 97%;
+
+    --card: 120 25% 8%;
+    --card-foreground: 120 100% 97%;
+
+    --border: 120 20% 25%;
+    --input: 120 20% 20%;
+
+    --primary: 120 45% 55%; /* Keep primary similar */
+    --primary-foreground: 120 75% 96%;
+
+    --secondary: 120 20% 20%;
+    --secondary-foreground: 120 50% 80%;
+
+    --accent: 87 50% 70%; /* Keep accent similar */
+    --accent-foreground: 87 30% 20%;
+
+    --destructive: 0 60% 45%;
+    --destructive-foreground: 0 0% 98%;
+
+    --ring: 120 45% 55%;
+    
+    --chart-1: 120 70% 50%;
+    --chart-2: 87 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 200 65% 60%;
+    --chart-5: 340 75% 55%;
+
+    /* Dark Sidebar specific colors */
+    --sidebar-background: 120 25% 12%;
+    --sidebar-foreground: 120 60% 92%;
+    --sidebar-primary: 120 45% 55%;
+    --sidebar-primary-foreground: 120 75% 96%;
+    --sidebar-accent: 87 50% 70%;
+    --sidebar-accent-foreground: 87 30% 20%;
+    --sidebar-border: 120 20% 22%;
+    --sidebar-ring: 120 45% 55%;
   }
 }
 
@@ -84,5 +107,6 @@ body {
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-geist-sans), sans-serif;
   }
 }
