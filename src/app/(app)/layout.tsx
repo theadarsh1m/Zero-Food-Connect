@@ -3,7 +3,8 @@
 
 import AppHeader from "@/components/layout/AppHeader";
 import type React from "react";
-import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+// AuthProvider import removed as it's now in the root layout
+import { useAuth } from "@/contexts/AuthContext"; 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
@@ -51,11 +52,7 @@ function ProtectedAppLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
-
+// AppLayoutWrapper no longer needs to provide AuthContext
 export default function AppLayoutWrapper({children}: {children: React.ReactNode}) {
-  return (
-    <AuthProvider>
-      <ProtectedAppLayout>{children}</ProtectedAppLayout>
-    </AuthProvider>
-  )
+  return <ProtectedAppLayout>{children}</ProtectedAppLayout>;
 }
