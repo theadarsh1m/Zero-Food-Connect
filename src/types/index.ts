@@ -1,7 +1,8 @@
+
 export type Role = "donor" | "recipient" | "volunteer" | "admin";
 
 export interface User {
-  id: string;
+  uid: string; // Changed from id to uid for clarity with Firebase auth
   email: string | null;
   name: string | null;
   role: Role;

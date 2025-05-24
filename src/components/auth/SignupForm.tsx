@@ -1,9 +1,11 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
+import { useRouter } from "next/navigation"; // For redirection
 
 import { Button } from "@/components/ui/button";
 import {
@@ -23,8 +25,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { useState } from "react";
 import type { Role } from "@/types";
+import { useAuth } from "@/contexts/AuthContext"; // Import useAuth
+import { useToast } from "@/hooks/use-toast";
 
 const formSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }),
@@ -38,7 +41,9 @@ const formSchema = z.object({
 });
 
 export default function SignupForm() {
-  const [isLoading, setIsLoading] = useState(false);
+  const { signupWithEmail, loadingAction, error } = useAuth(); // Use from context
+  const router = useRouter();
+  const { toast } = useToast();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -52,19 +57,8 @@ export default function SignupForm() {
   });
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
-    setIsLoading(true);
-    console.log("Signup values:", values);
-    // TODO: Implement actual signup logic with Firebase or other auth provider
-    // Example:
-    // try {
-    //   await signup(values.email, values.password, values.name, values.role as Role);
-    //   router.push('/dashboard'); // Redirect to dashboard on successful signup
-    // } catch (error) {
-    //   console.error("Signup failed:", error);
-    //   // Show error toast or message
-    // }
-    await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
-    setIsLoading(false);
+    await signupWithEmail(values.email, values.password, values.name, values.role as Role);
+    // Redirection is handled within signupWithEmail on success
   }
 
   const roles: { value: Role; label: string }[] = [
@@ -89,7 +83,7 @@ export default function SignupForm() {
                 <FormItem>
                   <FormLabel>Full Name</FormLabel>
                   <FormControl>
-                    <Input placeholder="John Doe" {...field} />
+                    <Input placeholder="John Doe" {...field} disabled={loadingAction} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -102,7 +96,7 @@ export default function SignupForm() {
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input placeholder="you@example.com" {...field} type="email" />
+                    <Input placeholder="you@example.com" {...field} type="email" disabled={loadingAction} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -115,7 +109,7 @@ export default function SignupForm() {
                 <FormItem>
                   <FormLabel>Password</FormLabel>
                   <FormControl>
-                    <Input placeholder="••••••••" {...field} type="password" />
+                    <Input placeholder="••••••••" {...field} type="password" disabled={loadingAction} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -128,7 +122,7 @@ export default function SignupForm() {
                 <FormItem>
                   <FormLabel>Confirm Password</FormLabel>
                   <FormControl>
-                    <Input placeholder="••••••••" {...field} type="password" />
+                    <Input placeholder="••••••••" {...field} type="password" disabled={loadingAction} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -140,7 +134,7 @@ export default function SignupForm() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>I am a...</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} defaultValue={field.value} disabled={loadingAction}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select your role" />
@@ -158,8 +152,9 @@ export default function SignupForm() {
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Creating Account..." : "Create Account"}
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <Button type="submit" className="w-full" disabled={loadingAction}>
+              {loadingAction ? "Creating Account..." : "Create Account"}
             </Button>
           </form>
         </Form>

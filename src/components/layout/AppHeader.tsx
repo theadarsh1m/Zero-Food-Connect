@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -13,6 +14,7 @@ import {
   UserCircle,
   Menu,
   Settings,
+  LogIn,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,53 +25,63 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTrigger, SheetClose } from "@/components/ui/sheet";
 import type { NavItem } from "@/types";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-// import { useAuth } from "@/hooks/use-auth"; // Placeholder for auth hook
+import { useAuth } from "@/contexts/AuthContext"; // Import useAuth
 
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["donor", "recipient", "volunteer", "admin"] },
-  { href: "/donate", label: "Donate Food", icon: CookingPot, roles: ["donor"] },
-  { href: "/browse", label: "Browse Food", icon: Search, roles: ["recipient"] },
-  { href: "/pickups", label: "Volunteer Pickups", icon: HandHelping, roles: ["volunteer"] },
-  { href: "/history", label: "My History", icon: History, roles: ["donor", "recipient", "volunteer"] },
+  { href: "/donor", label: "My Donations Hub", icon: CookingPot, roles: ["donor"] },
+  { href: "/recipient", label: "Find Food Hub", icon: Search, roles: ["recipient"] },
+  { href: "/volunteer", label: "Pickup Hub", icon: HandHelping, roles: ["volunteer"] },
+  // More specific role-based dashboard links for clarity
+  { href: "/donate", label: "Post New Donation", icon: CookingPot, roles: ["donor"] },
+  { href: "/browse", label: "Browse Available Food", icon: Search, roles: ["recipient"] },
+  { href: "/pickups", label: "Available Pickups", icon: HandHelping, roles: ["volunteer"] },
+  { href: "/history", label: "Activity History", icon: History, roles: ["donor", "recipient", "volunteer", "admin"] },
   { href: "/tips", label: "AI Food Tips", icon: Lightbulb, roles: ["donor", "recipient", "volunteer", "admin"] },
 ];
 
+
 export default function AppHeader() {
   const pathname = usePathname();
-  // const { user, logout } = useAuth(); // Placeholder
-  const user = { name: "User Name", email: "user@example.com", role: "donor" }; // Mock user
-  const logout = async () => console.log("Logout clicked"); // Mock logout
+  const { currentUser, userData, logoutUser, loadingAuth } = useAuth();
 
-  // Filter nav items based on mock user role for now
-  const accessibleNavItems = navItems.filter(item => !item.roles || item.roles.includes(user.role as any));
+  const accessibleNavItems = navItems.filter(item => {
+    if (loadingAuth) return false; // Don't show nav items while auth state is loading
+    if (!currentUser || !userData?.role) return item.href === "/tips"; // Only show AI tips if not logged in or role not determined
+    return !item.roles || item.roles.includes(userData.role);
+  });
 
 
   const UserAvatar = () => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+          {/* TODO: Add Avatar component with fallback if user.photoURL exists */}
           <UserCircle className="h-8 w-8" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end" forceMount>
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col space-y-1">
-            <p className="text-sm font-medium leading-none">{user?.name || "User"}</p>
+            <p className="text-sm font-medium leading-none">{userData?.name || "User"}</p>
             <p className="text-xs leading-none text-muted-foreground">
-              {user?.email || "user@example.com"}
+              {currentUser?.email || "user@example.com"}
+            </p>
+             <p className="text-xs leading-none text-muted-foreground capitalize">
+              Role: {userData?.role || "Unknown"}
             </p>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem>
+        <DropdownMenuItem onClick={() => {/* TODO: Implement settings navigation */}}>
           <Settings className="mr-2 h-4 w-4" />
           <span>Settings</span>
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={logout}>
+        <DropdownMenuItem onClick={logoutUser}>
           <LogOut className="mr-2 h-4 w-4" />
           <span>Log out</span>
         </DropdownMenuItem>
@@ -80,7 +92,7 @@ export default function AppHeader() {
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center justify-between">
-        <Link href="/dashboard" className="flex items-center space-x-2">
+        <Link href={currentUser && userData?.role ? `/${userData.role}` : "/dashboard"} className="flex items-center space-x-2">
           <Leaf className="h-6 w-6 text-primary" />
           <span className="font-bold text-lg">ZeroWaste Connect</span>
         </Link>
@@ -101,9 +113,19 @@ export default function AppHeader() {
         </nav>
 
         <div className="flex items-center space-x-2">
-          <div className="hidden md:block">
-            <UserAvatar />
-          </div>
+          {loadingAuth ? (
+            <UserCircle className="h-8 w-8 text-muted-foreground animate-pulse" />
+          ) : currentUser ? (
+            <div className="hidden md:block">
+              <UserAvatar />
+            </div>
+          ) : (
+            <Button variant="ghost" asChild>
+              <Link href="/login" className="flex items-center">
+                <LogIn className="mr-2 h-4 w-4" /> Login
+              </Link>
+            </Button>
+          )}
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="md:hidden">
@@ -112,35 +134,69 @@ export default function AppHeader() {
               </Button>
             </SheetTrigger>
             <SheetContent side="right" className="w-[300px] sm:w-[400px]">
-              <nav className="flex flex-col space-y-4 mt-8">
+              {currentUser && userData && (
+                 <div className="p-4 border-b">
+                    <p className="text-sm font-medium leading-none">{userData?.name || "User"}</p>
+                    <p className="text-xs leading-none text-muted-foreground">
+                      {currentUser?.email}
+                    </p>
+                    <p className="text-xs leading-none text-muted-foreground capitalize mt-1">
+                      Role: {userData?.role}
+                    </p>
+                 </div>
+              )}
+              <nav className="flex flex-col space-y-1 p-4">
                 {accessibleNavItems.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn(
-                      "flex items-center space-x-2 rounded-md p-2 text-base font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
-                      pathname === item.href ? "bg-accent text-accent-foreground" : "text-foreground"
-                    )}
-                  >
-                    <item.icon className="h-5 w-5" />
-                    <span>{item.label}</span>
-                  </Link>
+                  <SheetClose asChild key={item.href}>
+                    <Link
+                      href={item.href}
+                      className={cn(
+                        "flex items-center space-x-2 rounded-md p-2 text-base font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
+                        pathname === item.href ? "bg-accent text-accent-foreground" : "text-foreground"
+                      )}
+                    >
+                      <item.icon className="h-5 w-5" />
+                      <span>{item.label}</span>
+                    </Link>
+                  </SheetClose>
                 ))}
-                <DropdownMenuSeparator />
-                 <Link
-                    href="/settings" // Placeholder for settings page
-                    className={cn(
-                      "flex items-center space-x-2 rounded-md p-2 text-base font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
-                       pathname === "/settings" ? "bg-accent text-accent-foreground" : "text-foreground"
-                    )}
-                  >
-                    <Settings className="mr-2 h-5 w-5" />
-                    <span>Settings</span>
-                  </Link>
-                  <Button variant="outline" onClick={logout} className="w-full justify-start text-base font-medium">
-                     <LogOut className="mr-2 h-5 w-5" />
-                     <span>Log out</span>
-                  </Button>
+                {currentUser && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <SheetClose asChild>
+                      <Link
+                          href="/settings" // Placeholder for settings page
+                          className={cn(
+                            "flex items-center space-x-2 rounded-md p-2 text-base font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
+                            pathname === "/settings" ? "bg-accent text-accent-foreground" : "text-foreground"
+                          )}
+                        >
+                          <Settings className="mr-2 h-5 w-5" />
+                          <span>Settings</span>
+                      </Link>
+                    </SheetClose>
+                    <SheetClose asChild>
+                      <Button variant="outline" onClick={logoutUser} className="w-full justify-start text-base font-medium mt-2">
+                        <LogOut className="mr-2 h-5 w-5" />
+                        <span>Log out</span>
+                      </Button>
+                    </SheetClose>
+                  </>
+                )}
+                {!currentUser && !loadingAuth && (
+                   <SheetClose asChild>
+                     <Link
+                        href="/login"
+                        className={cn(
+                          "flex items-center space-x-2 rounded-md p-2 text-base font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
+                          pathname === "/login" ? "bg-accent text-accent-foreground" : "text-foreground"
+                        )}
+                      >
+                        <LogIn className="mr-2 h-5 w-5" />
+                        <span>Login</span>
+                      </Link>
+                   </SheetClose>
+                )}
               </nav>
             </SheetContent>
           </Sheet>

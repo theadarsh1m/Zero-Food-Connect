@@ -1,9 +1,11 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import Link from "next/link";
+import { useRouter } from "next/navigation"; // For redirection
 
 import { Button } from "@/components/ui/button";
 import {
@@ -16,15 +18,18 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { useState } from "react";
+import { useAuth } from "@/contexts/AuthContext"; // Import useAuth
+import { useToast } from "@/hooks/use-toast";
 
 const formSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters." }),
+  password: z.string().min(1, { message: "Password is required." }), // Min 1 for Firebase, can be more
 });
 
 export default function LoginForm() {
-  const [isLoading, setIsLoading] = useState(false);
+  const { loginWithEmail, loadingAction, error } = useAuth(); // Use from context
+  const router = useRouter();
+  const { toast } = useToast();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -35,19 +40,8 @@ export default function LoginForm() {
   });
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
-    setIsLoading(true);
-    console.log("Login values:", values);
-    // TODO: Implement actual login logic with Firebase or other auth provider
-    // Example:
-    // try {
-    //   await login(values.email, values.password);
-    //   router.push('/dashboard'); // Redirect to dashboard on successful login
-    // } catch (error) {
-    //   console.error("Login failed:", error);
-    //   // Show error toast or message
-    // }
-    await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
-    setIsLoading(false);
+    await loginWithEmail(values.email, values.password);
+    // Redirection is handled within loginWithEmail on success
   }
 
   return (
@@ -66,7 +60,7 @@ export default function LoginForm() {
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input placeholder="you@example.com" {...field} type="email" />
+                    <Input placeholder="you@example.com" {...field} type="email" disabled={loadingAction} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -79,14 +73,15 @@ export default function LoginForm() {
                 <FormItem>
                   <FormLabel>Password</FormLabel>
                   <FormControl>
-                    <Input placeholder="••••••••" {...field} type="password" />
+                    <Input placeholder="••••••••" {...field} type="password" disabled={loadingAction} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Signing In..." : "Sign In"}
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <Button type="submit" className="w-full" disabled={loadingAction}>
+              {loadingAction ? "Signing In..." : "Sign In"}
             </Button>
           </form>
         </Form>
