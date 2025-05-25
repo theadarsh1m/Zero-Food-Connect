@@ -16,7 +16,9 @@ export interface FoodPost {
   donorName?: string; // Store donor's name for easier display
   foodType: string;
   quantity: string;
-  location: string; // Could be more structured (e.g., address object) or GeoPoint later
+  location: string; // Textual address or description
+  latitude?: number; // Optional latitude
+  longitude?: number; // Optional longitude
   pickupInstructions?: string;
   expiryDate: Timestamp; // Store as Firestore Timestamp
   imageUrl?: string; // Public URL of the image in Firebase Storage

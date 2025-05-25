@@ -33,7 +33,7 @@ export default function BrowsePage() {
     try {
       const q = query(
         collection(db, "food_donations"),
-        // where("status", "==", "available"), // We fetch all and filter/disable UI based on status
+        where("status", "==", "available"),
         orderBy("postedAt", "desc")
       );
       const querySnapshot = await getDocs(q);
@@ -78,7 +78,6 @@ export default function BrowsePage() {
         requestedAt: Timestamp.now(),
       });
 
-      // Update local state
       setFoodItems(prevItems =>
         prevItems.map(item =>
           item.id === selectedItem.id
@@ -97,8 +96,13 @@ export default function BrowsePage() {
     }
   };
 
-  const openGoogleMaps = (location: string) => {
-    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
+  const openGoogleMaps = (item: FoodPost) => {
+    let mapsUrl = `https://www.google.com/maps/search/?api=1&query=`;
+    if (item.latitude && item.longitude) {
+      mapsUrl += `${item.latitude},${item.longitude}`;
+    } else {
+      mapsUrl += encodeURIComponent(item.location);
+    }
     window.open(mapsUrl, '_blank');
   };
 
@@ -183,6 +187,7 @@ export default function BrowsePage() {
                 <div className="flex items-center text-sm">
                   <MapPin className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
                   <span>{item.location}</span>
+                  {item.latitude && item.longitude && <span className="ml-1 text-xs text-muted-foreground">(Precise location available)</span>}
                 </div>
                 {item.expiryDate && (
                   <div className="flex items-center text-sm">
@@ -242,6 +247,11 @@ export default function BrowsePage() {
               <p><strong>Quantity:</strong> {selectedItem.quantity}</p>
               <p><strong>Donor:</strong> {selectedItem.donorName || "Anonymous Donor"}</p>
               <p><strong>Pickup Location:</strong> {selectedItem.location}</p>
+              {selectedItem.latitude && selectedItem.longitude && (
+                <p className="text-sm text-muted-foreground">
+                  Exact coordinates are available for mapping.
+                </p>
+              )}
               {selectedItem.expiryDate && (
                 <p><strong>Expires by:</strong> {format(selectedItem.expiryDate.toDate(), "PPP")}</p>
               )}
@@ -253,7 +263,7 @@ export default function BrowsePage() {
                     Posted: {format(selectedItem.postedAt.toDate(), "PPP p")}
                   </p>
               )}
-               <Button variant="outline" onClick={() => openGoogleMaps(selectedItem.location)} className="w-full">
+               <Button variant="outline" onClick={() => openGoogleMaps(selectedItem)} className="w-full">
                 <MapPin className="mr-2 h-4 w-4" /> View in Map
               </Button>
             </div>

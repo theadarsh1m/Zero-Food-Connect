@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { CalendarIcon, PackagePlus, Loader2, UploadCloud } from "lucide-react";
+import { CalendarIcon, PackagePlus, Loader2, UploadCloud, MapPinIcon, LocateFixed } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { Timestamp, collection, addDoc } from "firebase/firestore";
@@ -26,7 +26,9 @@ export default function DonatePage() {
 
   const [foodType, setFoodType] = React.useState("");
   const [quantity, setQuantity] = React.useState("");
-  const [location, setLocation] = React.useState("");
+  const [location, setLocation] = React.useState(""); // Textual location
+  const [currentLocationCoords, setCurrentLocationCoords] = React.useState<{ lat: number; lng: number } | null>(null);
+  const [isFetchingLocation, setIsFetchingLocation] = React.useState(false);
   const [selectedDate, setSelectedDate] = React.useState<Date | undefined>();
   const [pickupInstructions, setPickupInstructions] = React.useState("");
   const [foodImageFile, setFoodImageFile] = React.useState<File | null>(null);
@@ -52,16 +54,55 @@ export default function DonatePage() {
     setFoodType("");
     setQuantity("");
     setLocation("");
+    setCurrentLocationCoords(null);
     setSelectedDate(undefined);
     setPickupInstructions("");
     setFoodImageFile(null);
     setFoodImagePreview(null);
-    // Clear the file input visually
     const fileInput = document.getElementById('foodImage') as HTMLInputElement;
     if (fileInput) {
         fileInput.value = "";
     }
   };
+
+  const handleGetCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      toast({
+        title: "Geolocation Not Supported",
+        description: "Your browser doesn't support geolocation.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsFetchingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setCurrentLocationCoords({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+        toast({
+          title: "Location Fetched",
+          description: "Your current location coordinates have been set.",
+        });
+        // Optionally, you could try to reverse geocode to fill the 'location' text input
+        // For now, we inform the user and they can still add textual details.
+        // setLocation(`Current Location (Lat: ${position.coords.latitude.toFixed(4)}, Lng: ${position.coords.longitude.toFixed(4)})`);
+        setIsFetchingLocation(false);
+      },
+      (error) => {
+        console.error("Error getting location:", error);
+        toast({
+          title: "Location Error",
+          description: error.message || "Could not fetch your location.",
+          variant: "destructive",
+        });
+        setIsFetchingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -70,7 +111,7 @@ export default function DonatePage() {
       return;
     }
     if (!foodType || !quantity || !location || !selectedDate) {
-      toast({ title: "Missing Fields", description: "Please fill in all required fields (Food Type, Quantity, Location, Expiry Date).", variant: "destructive" });
+      toast({ title: "Missing Fields", description: "Please fill in all required fields (Food Type, Quantity, Pickup Location, Expiry Date).", variant: "destructive" });
       return;
     }
 
@@ -81,7 +122,6 @@ export default function DonatePage() {
     try {
       if (foodImageFile) {
         const uniqueFileName = `${Date.now()}-${foodImageFile.name}`;
-        // Ensure currentUser.uid is available and string
         const storagePath = `food_donations_images/${currentUser.uid}/${uniqueFileName}`;
         const imageRef = storageRef(storage, storagePath);
         
@@ -95,8 +135,12 @@ export default function DonatePage() {
         donorName: userData?.name || "Anonymous Donor",
         foodType,
         quantity,
-        location,
-        expiryDate: Timestamp.fromDate(selectedDate), // `selectedDate` is guaranteed by the check above
+        location, // Textual location
+        ...(currentLocationCoords && { 
+          latitude: currentLocationCoords.lat,
+          longitude: currentLocationCoords.lng 
+        }),
+        expiryDate: Timestamp.fromDate(selectedDate),
         postedAt: Timestamp.now(),
         status: "available",
         ...(pickupInstructions && { pickupInstructions }),
@@ -144,17 +188,48 @@ export default function DonatePage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <Label htmlFor="foodType">Food Type *</Label>
-                <Input id="foodType" placeholder="e.g., Fresh Produce, Cooked Meals" value={foodType} onChange={(e) => setFoodType(e.target.value)} disabled={isLoading} required />
+                <Input id="foodType" placeholder="e.g., Fresh Produce, Cooked Meals" value={foodType} onChange={(e) => setFoodType(e.target.value)} disabled={isLoading || isFetchingLocation} required />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="quantity">Quantity *</Label>
-                <Input id="quantity" placeholder="e.g., 5 kg, 10 meals, 2 boxes" value={quantity} onChange={(e) => setQuantity(e.target.value)} disabled={isLoading} required />
+                <Input id="quantity" placeholder="e.g., 5 kg, 10 meals, 2 boxes" value={quantity} onChange={(e) => setQuantity(e.target.value)} disabled={isLoading || isFetchingLocation} required />
               </div>
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="location">Pickup Location *</Label>
-              <Input id="location" placeholder="Full address or general area" value={location} onChange={(e) => setLocation(e.target.value)} disabled={isLoading} required />
+              <Label htmlFor="location">Pickup Location (Address/Description) *</Label>
+              <div className="flex items-center gap-2">
+                <MapPinIcon className="h-5 w-5 text-muted-foreground" />
+                <Input 
+                  id="location" 
+                  placeholder="Full address or general area" 
+                  value={location} 
+                  onChange={(e) => setLocation(e.target.value)} 
+                  disabled={isLoading || isFetchingLocation} 
+                  required 
+                  className="flex-grow"
+                />
+              </div>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={handleGetCurrentLocation} 
+                disabled={isLoading || isFetchingLocation}
+                className="w-full mt-2"
+              >
+                {isFetchingLocation ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <LocateFixed className="mr-2 h-4 w-4" />
+                )}
+                Use My Current Location
+              </Button>
+              {currentLocationCoords && (
+                <p className="text-xs text-muted-foreground">
+                  Coordinates set: Lat: {currentLocationCoords.lat.toFixed(4)}, Lng: {currentLocationCoords.lng.toFixed(4)}. 
+                  Please also provide a textual address/description.
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -167,7 +242,7 @@ export default function DonatePage() {
                       "w-full justify-start text-left font-normal",
                       !selectedDate && "text-muted-foreground"
                     )}
-                    disabled={isLoading}
+                    disabled={isLoading || isFetchingLocation}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
                     {selectedDate ? format(selectedDate, "PPP") : <span>Pick a date</span>}
@@ -179,7 +254,7 @@ export default function DonatePage() {
                     selected={selectedDate}
                     onSelect={setSelectedDate}
                     disabled={(date) =>
-                      date < new Date(new Date().setHours(0, 0, 0, 0)) || isLoading
+                      date < new Date(new Date().setHours(0, 0, 0, 0)) || isLoading || isFetchingLocation
                     }
                     initialFocus
                   />
@@ -192,12 +267,12 @@ export default function DonatePage() {
 
             <div className="space-y-2">
               <Label htmlFor="pickupInstructions">Pickup Instructions (Optional)</Label>
-              <Textarea id="pickupInstructions" placeholder="e.g., Contact John at 555-1234 upon arrival. Food is in the lobby fridge." value={pickupInstructions} onChange={(e) => setPickupInstructions(e.target.value)} disabled={isLoading} />
+              <Textarea id="pickupInstructions" placeholder="e.g., Contact John at 555-1234 upon arrival. Food is in the lobby fridge." value={pickupInstructions} onChange={(e) => setPickupInstructions(e.target.value)} disabled={isLoading || isFetchingLocation} />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="foodImage">Upload Image (Optional)</Label>
-              <Input id="foodImage" type="file" accept="image/*" onChange={handleImageChange} disabled={isLoading} />
+              <Input id="foodImage" type="file" accept="image/*" onChange={handleImageChange} disabled={isLoading || isFetchingLocation} />
               {foodImagePreview && (
                 <div className="mt-2 relative w-full h-48 border rounded-md overflow-hidden">
                    <Image src={foodImagePreview} alt="Food image preview" layout="fill" objectFit="cover" />
@@ -206,7 +281,7 @@ export default function DonatePage() {
               <p className="text-xs text-muted-foreground">A picture can help recipients understand the donation better.</p>
             </div>
 
-            <Button type="submit" className="w-full" disabled={isLoading}>
+            <Button type="submit" className="w-full" disabled={isLoading || isFetchingLocation}>
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
