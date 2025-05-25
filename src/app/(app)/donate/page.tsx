@@ -81,7 +81,10 @@ export default function DonatePage() {
     try {
       if (foodImageFile) {
         const uniqueFileName = `${Date.now()}-${foodImageFile.name}`;
-        const imageRef = storageRef(storage, `food_donations_images/${currentUser.uid}/${uniqueFileName}`);
+        // Ensure currentUser.uid is available and string
+        const storagePath = `food_donations_images/${currentUser.uid}/${uniqueFileName}`;
+        const imageRef = storageRef(storage, storagePath);
+        
         const uploadResult = await uploadBytes(imageRef, foodImageFile);
         imageUrl = await getDownloadURL(uploadResult.ref);
         imagePath = uploadResult.ref.fullPath;
@@ -93,7 +96,7 @@ export default function DonatePage() {
         foodType,
         quantity,
         location,
-        expiryDate: Timestamp.fromDate(selectedDate),
+        expiryDate: Timestamp.fromDate(selectedDate), // `selectedDate` is guaranteed by the check above
         postedAt: Timestamp.now(),
         status: "available",
         ...(pickupInstructions && { pickupInstructions }),
@@ -107,7 +110,11 @@ export default function DonatePage() {
       resetForm();
     } catch (error: any) {
       console.error("Error posting donation:", error);
-      toast({ title: "Post Failed", description: error.message || "Could not post your donation. Please try again.", variant: "destructive" });
+      toast({ 
+        title: "Post Failed", 
+        description: error.message || "Could not post your donation. Please try again.", 
+        variant: "destructive" 
+      });
     } finally {
       setIsLoading(false);
     }
