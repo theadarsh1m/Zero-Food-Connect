@@ -5,22 +5,28 @@ import * as React from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Package, User, Clock, CheckCircle2, Truck, Loader2, AlertTriangle, Search } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { MapPin, Package, User, Clock, CheckCircle2, Truck, Loader2, AlertTriangle, Search, Info, CalendarDays, Phone } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, query, where, orderBy, getDocs, Timestamp, doc, updateDoc } from "firebase/firestore";
 import type { FoodDeliveryRequest } from "@/types";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { useRouter } from "next/navigation"; // For potential redirects or navigation
 
 export default function VolunteerPickupsPage() {
   const [pickupRequests, setPickupRequests] = React.useState<FoodDeliveryRequest[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
-  const [isAccepting, setIsAccepting] = React.useState<string | null>(null); // Stores ID of item being accepted
+  const [isAccepting, setIsAccepting] = React.useState<string | null>(null); 
+  
+  const [selectedRequestDetails, setSelectedRequestDetails] = React.useState<FoodDeliveryRequest | null>(null);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = React.useState(false);
 
   const { currentUser, userData } = useAuth();
   const { toast } = useToast();
+  const router = useRouter();
 
   const fetchPickupRequests = async () => {
     if (!currentUser || userData?.role !== 'volunteer') {
@@ -34,7 +40,7 @@ export default function VolunteerPickupsPage() {
       const q = query(
         collection(db, "food_delivery_requests"),
         where("status", "==", "pending_volunteer_assignment"),
-        orderBy("requestedAt", "asc") // Show oldest requests first
+        orderBy("requestedAt", "asc")
       );
       const querySnapshot = await getDocs(q);
       const fetchedRequests = querySnapshot.docs.map(doc => ({
@@ -53,7 +59,7 @@ export default function VolunteerPickupsPage() {
   React.useEffect(() => {
     fetchPickupRequests();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, userData]); // Rerun if user changes
+  }, [currentUser, userData]);
 
   const handleAcceptPickup = async (request: FoodDeliveryRequest) => {
     if (!currentUser || userData?.role !== 'volunteer' || !request.id) {
@@ -62,6 +68,7 @@ export default function VolunteerPickupsPage() {
     }
     if (request.status !== 'pending_volunteer_assignment') {
       toast({ title: "Already Handled", description: "This pickup request is no longer pending.", variant: "default" });
+      fetchPickupRequests(); // Re-fetch to update list
       return;
     }
 
@@ -75,15 +82,25 @@ export default function VolunteerPickupsPage() {
         assignedAt: Timestamp.now(),
       });
 
-      // Also update the original food_donation post status
       const donationRef = doc(db, "food_donations", request.donationId);
       await updateDoc(donationRef, {
         status: "volunteer_assigned", 
       });
 
-
       setPickupRequests(prevRequests => prevRequests.filter(r => r.id !== request.id));
-      toast({ title: "Pickup Accepted!", description: `You have accepted the pickup for ${request.foodType}.` });
+      toast({ title: "Pickup Accepted!", description: `You have accepted the pickup for ${request.foodType}. Details shown below.` });
+      
+      // Set details for the modal and open it
+      const fullRequestDetails = {
+        ...request,
+        status: "assigned_to_volunteer" as FoodDeliveryRequest["status"], // type assertion
+        assignedVolunteerId: currentUser.uid,
+        assignedVolunteerName: userData.name || "Volunteer",
+        assignedAt: Timestamp.now(),
+      };
+      setSelectedRequestDetails(fullRequestDetails);
+      setIsDetailsModalOpen(true);
+
     } catch (err: any) {
       console.error("Error accepting pickup:", err);
       toast({ title: "Acceptance Failed", description: err.message || "Could not accept the pickup. Please try again.", variant: "destructive" });
@@ -92,12 +109,13 @@ export default function VolunteerPickupsPage() {
     }
   };
   
-  const openGoogleMaps = (request: FoodDeliveryRequest) => {
+  const openGoogleMaps = (item: FoodDeliveryRequest | null) => {
+    if (!item) return;
     let mapsUrl = `https://www.google.com/maps/search/?api=1&query=`;
-    if (request.pickupLatitude && request.pickupLongitude) {
-      mapsUrl += `${request.pickupLatitude},${request.pickupLongitude}`;
+    if (item.pickupLatitude && item.pickupLongitude) {
+      mapsUrl += `${item.pickupLatitude},${item.pickupLongitude}`;
     } else {
-      mapsUrl += encodeURIComponent(request.pickupLocation);
+      mapsUrl += encodeURIComponent(item.pickupLocation);
     }
     window.open(mapsUrl, '_blank');
   };
@@ -173,7 +191,7 @@ export default function VolunteerPickupsPage() {
                   <div><strong>From (Donor):</strong> {request.donorName || 'Anonymous'} at {request.pickupLocation}</div>
                 </div>
                  <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => openGoogleMaps(request)}>
-                   View Pickup Map
+                   View Pickup Map Preview
                  </Button>
                 <div className="flex items-start text-sm">
                   <User className="mr-2 h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
@@ -184,7 +202,6 @@ export default function VolunteerPickupsPage() {
                 )}
               </CardContent>
               <CardFooter className="flex justify-end gap-2">
-                {/* <Button variant="outline" size="sm">View Details</Button> */}
                 {request.status === "pending_volunteer_assignment" && (
                   <Button 
                     size="sm" 
@@ -199,6 +216,84 @@ export default function VolunteerPickupsPage() {
             </Card>
           ))}
         </div>
+      )}
+
+      {selectedRequestDetails && (
+        <Dialog open={isDetailsModalOpen} onOpenChange={(open) => {
+          setIsDetailsModalOpen(open);
+          if (!open) setSelectedRequestDetails(null);
+        }}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Info className="h-6 w-6 text-primary" />
+                Accepted Pickup: {selectedRequestDetails.foodType}
+              </DialogTitle>
+              <DialogDescription>
+                You have accepted this delivery. Please coordinate with the donor and recipient.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-4 text-sm max-h-[60vh] overflow-y-auto">
+              <p><strong>Status:</strong> <Badge>{selectedRequestDetails.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</Badge></p>
+              <p><strong>Food Type:</strong> {selectedRequestDetails.foodType}</p>
+              <p><strong>Quantity:</strong> {selectedRequestDetails.quantity}</p>
+              
+              <Card className="my-2">
+                <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2"><User className="h-4 w-4"/>Donor Information</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-1">
+                    <p><strong>Name:</strong> {selectedRequestDetails.donorName || "Anonymous Donor"}</p>
+                    <p className="flex items-center gap-1">
+                        <MapPin className="h-4 w-4 text-muted-foreground"/> 
+                        <strong>Pickup Location:</strong> {selectedRequestDetails.pickupLocation}
+                    </p>
+                    {selectedRequestDetails.pickupInstructions && (
+                        <p><strong>Pickup Instructions:</strong> {selectedRequestDetails.pickupInstructions}</p>
+                    )}
+                    <Button variant="outline" onClick={() => openGoogleMaps(selectedRequestDetails)} className="w-full mt-2 text-xs">
+                        <MapPin className="mr-2 h-3 w-3" /> View Pickup Location on Map
+                    </Button>
+                     {/* Placeholder for donor contact */}
+                    {/* <p><Phone className="inline mr-1 h-4 w-4 text-muted-foreground"/> <strong>Contact:</strong> (Not Implemented)</p> */}
+                </CardContent>
+              </Card>
+
+              <Card className="my-2">
+                <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2"><User className="h-4 w-4"/>Recipient Information</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-1">
+                    <p><strong>Name:</strong> {selectedRequestDetails.recipientName || "Recipient"}</p>
+                     {/* Placeholder for recipient address & contact */}
+                    {/* <p><MapPin className="inline mr-1 h-4 w-4 text-muted-foreground"/> <strong>Delivery Location:</strong> (Not Implemented)</p> */}
+                    {/* <p><Phone className="inline mr-1 h-4 w-4 text-muted-foreground"/> <strong>Contact:</strong> (Not Implemented)</p> */}
+                </CardContent>
+              </Card>
+              
+              {selectedRequestDetails.requestedAt && (
+                <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <CalendarDays className="h-3 w-3"/> 
+                    Requested: {format(selectedRequestDetails.requestedAt.toDate(), "PPP p")}
+                </p>
+              )}
+              {selectedRequestDetails.assignedAt && (
+                <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <CalendarDays className="h-3 w-3"/> 
+                    Accepted by you: {format(selectedRequestDetails.assignedAt.toDate(), "PPP p")}
+                </p>
+              )}
+            </div>
+            <DialogFooter className="sm:justify-end gap-2">
+              {/* Placeholder buttons for further actions */}
+              {/* <Button type="button" variant="outline" disabled>Mark as Picked Up</Button> */}
+              {/* <Button type="button" disabled>Mark as Delivered</Button> */}
+              <DialogClose asChild>
+                <Button type="button" variant="secondary">Close</Button>
+              </DialogClose>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

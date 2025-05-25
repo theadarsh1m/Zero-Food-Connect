@@ -3,7 +3,6 @@
 
 import Link from "next/link";
 import {
-  Leaf,
   LayoutDashboard,
   CookingPot,
   Search,
@@ -15,7 +14,7 @@ import {
   Menu,
   Settings, 
   LogIn,
-  Truck, // Added for volunteer specific hub
+  Truck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,8 +37,6 @@ const navItems: NavItem[] = [
   { href: "/donor", label: "Donor Hub", icon: CookingPot, roles: ["donor"] },
   { href: "/recipient", label: "Recipient Hub", icon: Search, roles: ["recipient"] },
   { href: "/volunteer", label: "Volunteer Hub", icon: Truck, roles: ["volunteer"] },
-  // Removed duplicate/conflicting entries like /donate and /browse from main navItems
-  // These are better accessed from within role-specific hubs or a general "Actions" menu if needed.
   { href: "/history", label: "Activity History", icon: History, roles: ["donor", "recipient", "volunteer", "admin"] },
   { href: "/tips", label: "AI Food Tips", icon: Lightbulb, roles: ["donor", "recipient", "volunteer", "admin"] },
 ];
@@ -53,7 +50,7 @@ export default function AppHeader() {
   const accessibleNavItems = navItems.filter(item => {
     if (loadingAuth) return false; 
     if (!currentUser || !userData?.role) {
-        return item.href === "/tips"; // Only allow tips if not fully logged in or role unknown
+        return item.href === "/tips"; 
     }
     return !item.roles || item.roles.includes(userData.role);
   });
@@ -63,7 +60,7 @@ export default function AppHeader() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-          {userData?.photoURL ? ( // Changed to photoURL
+          {userData?.photoURL ? (
             <Image 
               src={userData.photoURL} 
               alt={userData.name || "User profile"}
@@ -107,11 +104,11 @@ export default function AppHeader() {
   );
 
   const getHomeLink = () => {
-    if (loadingAuth) return "/"; // Default if still loading
+    if (loadingAuth) return "/"; 
     if (currentUser && userData?.role) {
-      return `/${userData.role}`; // e.g., /donor, /recipient
+      return `/${userData.role}`; 
     }
-    return "/dashboard"; // Fallback for general dashboard or if role is not specific
+    return "/dashboard"; 
   };
 
 
@@ -119,8 +116,7 @@ export default function AppHeader() {
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center justify-between">
         <Link href={getHomeLink()} className="flex items-center space-x-2">
-          <Leaf className="h-6 w-6 text-primary" />
-          <span className="font-bold text-lg">ZeroWaste Connect</span>
+          <Image src="/images/logo.png" alt="ZeroWaste Connect Logo" width={150} height={30} priority />
         </Link>
 
         <nav className="hidden md:flex items-center space-x-1 lg:space-x-2">
@@ -166,7 +162,7 @@ export default function AppHeader() {
             <SheetContent side="right" className="w-[300px] sm:w-[350px]">
               {currentUser && userData && (
                  <div className="p-4 border-b flex items-center gap-3">
-                    {userData?.photoURL ? ( // Changed to photoURL
+                    {userData?.photoURL ? (
                         <Image 
                         src={userData.photoURL} 
                         alt={userData.name || "User profile"}

@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Leaf, Users, Truck, Handshake } from "lucide-react";
+import { Users, Truck, Handshake } from "lucide-react"; // Leaf icon removed
 import Link from "next/link";
 import Image from "next/image";
 
@@ -10,8 +10,7 @@ export default function HomePage() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-14 items-center">
           <Link href="/" className="flex items-center space-x-2">
-            <Leaf className="h-6 w-6 text-primary" />
-            <span className="font-bold">ZeroWaste Connect</span>
+            <Image src="/images/logo.png" alt="ZeroWaste Connect Logo" width={150} height={30} priority />
           </Link>
           <nav className="ml-auto flex items-center space-x-2">
             <Button variant="ghost" asChild>
