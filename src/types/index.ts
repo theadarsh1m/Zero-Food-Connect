@@ -23,6 +23,8 @@ export interface FoodPost {
   imagePath?: string; // Path to the image in Firebase Storage (for deletion/management)
   postedAt: Timestamp; // Store as Firestore Timestamp
   status: "available" | "requested" | "fulfilled" | "expired";
+  requestedByUid?: string; // UID of the recipient who requested this item
+  requestedAt?: Timestamp; // Timestamp when the item was requested
 }
 
 export interface PickupRequest {

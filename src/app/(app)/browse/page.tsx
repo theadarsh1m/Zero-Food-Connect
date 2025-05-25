@@ -6,44 +6,101 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, CalendarClock, Search, Filter, Loader2, AlertTriangle } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog";
+import { MapPin, CalendarClock, Search, Filter, Loader2, AlertTriangle, Info, CheckCircle, XCircle, Handshake } from "lucide-react";
 import Image from "next/image";
 import { db } from "@/lib/firebase";
-import { collection, query, where, orderBy, getDocs, Timestamp } from "firebase/firestore";
+import { collection, query, where, orderBy, getDocs, Timestamp, doc, updateDoc } from "firebase/firestore";
 import type { FoodPost } from "@/types";
 import { format } from "date-fns";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 
 export default function BrowsePage() {
   const [foodItems, setFoodItems] = React.useState<FoodPost[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [selectedItem, setSelectedItem] = React.useState<FoodPost | null>(null);
+  const [isRequestDialogOpen, setIsRequestDialogOpen] = React.useState(false);
+  const [isSubmittingRequest, setIsSubmittingRequest] = React.useState(false);
+
+  const { currentUser, userData } = useAuth();
+  const { toast } = useToast();
+
+  const fetchFoodItems = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const q = query(
+        collection(db, "food_donations"),
+        // where("status", "==", "available"), // We fetch all and filter/disable UI based on status
+        orderBy("postedAt", "desc")
+      );
+      const querySnapshot = await getDocs(q);
+      const fetchedItems = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as FoodPost[];
+      setFoodItems(fetchedItems);
+    } catch (err: any) {
+      console.error("Error fetching food items:", err);
+      setError("Failed to load available food items. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   React.useEffect(() => {
-    const fetchFoodItems = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const q = query(
-          collection(db, "food_donations"),
-          where("status", "==", "available"),
-          orderBy("postedAt", "desc")
-        );
-        const querySnapshot = await getDocs(q);
-        const fetchedItems = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as FoodPost[];
-        setFoodItems(fetchedItems);
-      } catch (err: any) {
-        console.error("Error fetching food items:", err);
-        setError("Failed to load available food items. Please try again.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     fetchFoodItems();
   }, []);
+
+  const handleRequestFood = (item: FoodPost) => {
+    setSelectedItem(item);
+    setIsRequestDialogOpen(true);
+  };
+
+  const handleConfirmRequest = async () => {
+    if (!currentUser || userData?.role !== 'recipient') {
+      toast({ title: "Action Not Allowed", description: "Only recipients can request food items.", variant: "destructive" });
+      return;
+    }
+    if (!selectedItem || selectedItem.status !== 'available' || !selectedItem.id) {
+      toast({ title: "Cannot Request", description: "This item is no longer available or cannot be requested.", variant: "destructive" });
+      return;
+    }
+
+    setIsSubmittingRequest(true);
+    try {
+      const itemRef = doc(db, "food_donations", selectedItem.id);
+      await updateDoc(itemRef, {
+        status: "requested",
+        requestedByUid: currentUser.uid,
+        requestedAt: Timestamp.now(),
+      });
+
+      // Update local state
+      setFoodItems(prevItems =>
+        prevItems.map(item =>
+          item.id === selectedItem.id
+            ? { ...item, status: "requested", requestedByUid: currentUser.uid, requestedAt: Timestamp.now() }
+            : item
+        )
+      );
+      toast({ title: "Request Successful!", description: `You have requested ${selectedItem.foodType}.` });
+      setIsRequestDialogOpen(false);
+      setSelectedItem(null);
+    } catch (err: any) {
+      console.error("Error confirming request:", err);
+      toast({ title: "Request Failed", description: err.message || "Could not submit your request. Please try again.", variant: "destructive" });
+    } finally {
+      setIsSubmittingRequest(false);
+    }
+  };
+
+  const openGoogleMaps = (location: string) => {
+    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
+    window.open(mapsUrl, '_blank');
+  };
 
   return (
     <div className="space-y-8">
@@ -56,7 +113,7 @@ export default function BrowsePage() {
 
       <Card className="shadow-md">
         <CardHeader>
-          <CardTitle>Filter & Search</CardTitle>
+          <CardTitle>Filter & Search (Placeholder)</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col md:flex-row gap-4">
           <div className="flex-grow relative">
@@ -102,13 +159,20 @@ export default function BrowsePage() {
           {foodItems.map((item) => (
             <Card key={item.id} className="flex flex-col overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300">
               <div className="relative w-full h-48 bg-muted">
-                <Image 
-                  src={item.imageUrl || "https://placehold.co/300x200.png"} 
-                  alt={item.foodType} 
-                  layout="fill" 
+                <Image
+                  src={item.imageUrl || "https://placehold.co/300x200.png"}
+                  alt={item.foodType}
+                  layout="fill"
                   objectFit="cover"
                   data-ai-hint={!item.imageUrl ? "food placeholder" : undefined}
                 />
+                {item.status !== 'available' && (
+                   <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                     <Badge variant={item.status === 'requested' ? "secondary" : "destructive"} className="text-lg px-4 py-2">
+                       {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+                     </Badge>
+                   </div>
+                )}
               </div>
               <CardHeader>
                 <CardTitle>{item.foodType}</CardTitle>
@@ -133,11 +197,87 @@ export default function BrowsePage() {
                 )}
               </CardContent>
               <CardFooter>
-                <Button className="w-full">Request Pickup</Button>
+                <Button
+                  className="w-full"
+                  onClick={() => handleRequestFood(item)}
+                  disabled={item.status !== 'available' || !currentUser || userData?.role !== 'recipient'}
+                >
+                  {item.status === 'available' ? (
+                    <>
+                      <Handshake className="mr-2 h-4 w-4" /> Request Pickup
+                    </>
+                  ) : item.status === 'requested' ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Requested
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="mr-2 h-4 w-4" /> Unavailable
+                    </>
+                  )}
+                </Button>
               </CardFooter>
             </Card>
           ))}
         </div>
+      )}
+
+      {selectedItem && (
+        <Dialog open={isRequestDialogOpen} onOpenChange={(open) => {
+          setIsRequestDialogOpen(open);
+          if (!open) setSelectedItem(null);
+        }}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Info className="h-6 w-6 text-primary" />
+                Request: {selectedItem.foodType}
+              </DialogTitle>
+              <DialogDescription>
+                Review the details below and confirm your request.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <p><strong>Food Type:</strong> {selectedItem.foodType}</p>
+              <p><strong>Quantity:</strong> {selectedItem.quantity}</p>
+              <p><strong>Donor:</strong> {selectedItem.donorName || "Anonymous Donor"}</p>
+              <p><strong>Pickup Location:</strong> {selectedItem.location}</p>
+              {selectedItem.expiryDate && (
+                <p><strong>Expires by:</strong> {format(selectedItem.expiryDate.toDate(), "PPP")}</p>
+              )}
+              {selectedItem.pickupInstructions && (
+                <p><strong>Instructions:</strong> {selectedItem.pickupInstructions}</p>
+              )}
+              {selectedItem.postedAt && (
+                  <p className="text-xs text-muted-foreground pt-1">
+                    Posted: {format(selectedItem.postedAt.toDate(), "PPP p")}
+                  </p>
+              )}
+               <Button variant="outline" onClick={() => openGoogleMaps(selectedItem.location)} className="w-full">
+                <MapPin className="mr-2 h-4 w-4" /> View in Map
+              </Button>
+            </div>
+            <DialogFooter className="sm:justify-between gap-2">
+              <DialogClose asChild>
+                <Button type="button" variant="outline">
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button 
+                type="button" 
+                onClick={handleConfirmRequest} 
+                disabled={isSubmittingRequest || selectedItem.status !== 'available' || !currentUser || userData?.role !== 'recipient'}
+              >
+                {isSubmittingRequest ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                )}
+                Confirm Request
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );
