@@ -1,3 +1,7 @@
+
+"use client";
+
+import * as React from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,12 +12,15 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { CalendarIcon, PackagePlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-
-// This would be a client component if using react-hook-form, etc.
-// For now, keeping it simple server component structure with placeholder form elements.
+// Firebase Timestamp can be imported if you are ready to convert for Firestore
+// import { Timestamp } from "firebase/firestore";
 
 export default function DonatePage() {
-  // const [date, setDate] = React.useState<Date>() // For client component
+  const [selectedDate, setSelectedDate] = React.useState<Date | undefined>();
+
+  // When you submit the form, if selectedDate is defined, you can convert it for Firestore:
+  // const firestoreTimestamp = selectedDate ? Timestamp.fromDate(selectedDate) : null;
+  // Then save firestoreTimestamp to your database.
 
   return (
     <div className="space-y-8">
@@ -53,31 +60,34 @@ export default function DonatePage() {
 
           <div className="space-y-2">
             <Label htmlFor="expiryDate">Expiry Date/Window</Label>
-            {/* Placeholder for a real date picker. For a client component, you'd use state. */}
             <Popover>
               <PopoverTrigger asChild>
                 <Button
                   variant={"outline"}
                   className={cn(
                     "w-full justify-start text-left font-normal",
-                    // !date && "text-muted-foreground" // if 'date' state was used
-                    "text-muted-foreground" // static placeholder state
+                    !selectedDate && "text-muted-foreground"
                   )}
                 >
                   <CalendarIcon className="mr-2 h-4 w-4" />
-                  {/* {date ? format(date, "PPP") : <span>Pick a date</span>} */}
-                  <span>Pick a date</span>
+                  {selectedDate ? format(selectedDate, "PPP") : <span>Pick a date</span>}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0">
                 <Calendar
                   mode="single"
-                  // selected={date}
-                  // onSelect={setDate} // if 'date' state was used
+                  selected={selectedDate}
+                  onSelect={setSelectedDate}
+                  disabled={(date) =>
+                    date < new Date(new Date().setHours(0, 0, 0, 0)) // Disable past dates (today is allowed)
+                  }
                   initialFocus
                 />
               </PopoverContent>
             </Popover>
+            <p className="text-xs text-muted-foreground">
+              Select the date by which the food should be used or picked up.
+            </p>
           </div>
 
           <div className="space-y-2">
