@@ -1,45 +1,50 @@
+
+"use client";
+
+import * as React from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, CalendarClock, Search, Filter } from "lucide-react";
+import { MapPin, CalendarClock, Search, Filter, Loader2, AlertTriangle } from "lucide-react";
 import Image from "next/image";
-
-// Mock data for food items
-const mockFoodItems = [
-  {
-    id: "1",
-    type: "Fresh Vegetables",
-    quantity: "Approx. 10 kg mixed greens",
-    location: "Downtown Community Center",
-    expiryWindow: "Best by Tomorrow Evening",
-    imageUrl: "https://placehold.co/300x200.png",
-    dataAiHint: "fresh vegetables",
-    donor: "Green Grocer"
-  },
-  {
-    id: "2",
-    type: "Bakery Surplus",
-    quantity: "3 boxes of assorted pastries",
-    location: "Maria's Cafe, 123 Main St",
-    expiryWindow: "Today Only",
-    imageUrl: "https://placehold.co/300x200.png",
-    dataAiHint: "pastries bread",
-    donor: "Maria's Cafe"
-  },
-  {
-    id: "3",
-    type: "Cooked Meals",
-    quantity: "15 individually packed meals (Chicken & Rice)",
-    location: "North End Soup Kitchen (pickup only)",
-    expiryWindow: "Use by this evening",
-    imageUrl: "https://placehold.co/300x200.png",
-    dataAiHint: "cooked meal",
-    donor: "Anonymous Donor via App"
-  },
-];
+import { db } from "@/lib/firebase";
+import { collection, query, where, orderBy, getDocs, Timestamp } from "firebase/firestore";
+import type { FoodPost } from "@/types";
+import { format } from "date-fns";
 
 export default function BrowsePage() {
+  const [foodItems, setFoodItems] = React.useState<FoodPost[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const fetchFoodItems = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const q = query(
+          collection(db, "food_donations"),
+          where("status", "==", "available"),
+          orderBy("postedAt", "desc")
+        );
+        const querySnapshot = await getDocs(q);
+        const fetchedItems = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as FoodPost[];
+        setFoodItems(fetchedItems);
+      } catch (err: any) {
+        console.error("Error fetching food items:", err);
+        setError("Failed to load available food items. Please try again.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchFoodItems();
+  }, []);
+
   return (
     <div className="space-y-8">
       <div>
@@ -65,47 +70,74 @@ export default function BrowsePage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {mockFoodItems.map((item) => (
-          <Card key={item.id} className="flex flex-col overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300">
-            <div className="relative w-full h-48">
-              <Image 
-                src={item.imageUrl} 
-                alt={item.type} 
-                layout="fill" 
-                objectFit="cover" 
-                data-ai-hint={item.dataAiHint} 
-              />
-            </div>
-            <CardHeader>
-              <CardTitle>{item.type}</CardTitle>
-              <CardDescription>Donated by: {item.donor}</CardDescription>
-            </CardHeader>
-            <CardContent className="flex-grow space-y-2">
-              <p className="text-sm"><Badge variant="secondary" className="mr-1">Quantity:</Badge> {item.quantity}</p>
-              <div className="flex items-center text-sm">
-                <MapPin className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
-                <span>{item.location}</span>
-              </div>
-              <div className="flex items-center text-sm">
-                <CalendarClock className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
-                <span>{item.expiryWindow}</span>
-              </div>
-            </CardContent>
-            <CardFooter>
-              <Button className="w-full">Request Pickup</Button>
-            </CardFooter>
-          </Card>
-        ))}
-      </div>
-      {mockFoodItems.length === 0 && (
+      {isLoading && (
+        <div className="flex justify-center items-center py-10">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+          <p className="ml-3 text-lg">Loading food donations...</p>
+        </div>
+      )}
+
+      {!isLoading && error && (
+        <Card className="border-destructive bg-destructive/10">
+          <CardContent className="py-10 flex flex-col items-center text-destructive text-center">
+            <AlertTriangle className="w-12 h-12 mb-4" />
+            <h3 className="text-xl font-semibold mb-2">Oops! Something went wrong.</h3>
+            <p>{error}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {!isLoading && !error && foodItems.length === 0 && (
         <Card>
           <CardContent className="py-12 flex flex-col items-center justify-center">
             <Search className="w-16 h-16 text-muted-foreground mb-4" />
             <h3 className="text-xl font-semibold">No Food Items Found</h3>
-            <p className="text-muted-foreground">Check back later or adjust your filters.</p>
+            <p className="text-muted-foreground">Check back later or adjust your filters. No available donations at the moment.</p>
           </CardContent>
         </Card>
+      )}
+
+      {!isLoading && !error && foodItems.length > 0 && (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {foodItems.map((item) => (
+            <Card key={item.id} className="flex flex-col overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300">
+              <div className="relative w-full h-48 bg-muted">
+                <Image 
+                  src={item.imageUrl || "https://placehold.co/300x200.png"} 
+                  alt={item.foodType} 
+                  layout="fill" 
+                  objectFit="cover"
+                  data-ai-hint={!item.imageUrl ? "food placeholder" : undefined}
+                />
+              </div>
+              <CardHeader>
+                <CardTitle>{item.foodType}</CardTitle>
+                <CardDescription>Donated by: {item.donorName || "Anonymous Donor"}</CardDescription>
+              </CardHeader>
+              <CardContent className="flex-grow space-y-2">
+                <p className="text-sm"><Badge variant="secondary" className="mr-1">Quantity:</Badge> {item.quantity}</p>
+                <div className="flex items-center text-sm">
+                  <MapPin className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                  <span>{item.location}</span>
+                </div>
+                {item.expiryDate && (
+                  <div className="flex items-center text-sm">
+                    <CalendarClock className="mr-2 h-4 w-4 text-primary flex-shrink-0" />
+                    <span>Expires: {format(item.expiryDate.toDate(), "PPP")}</span>
+                  </div>
+                )}
+                 {item.postedAt && (
+                  <p className="text-xs text-muted-foreground pt-1">
+                    Posted: {format(item.postedAt.toDate(), "PPP p")}
+                  </p>
+                )}
+              </CardContent>
+              <CardFooter>
+                <Button className="w-full">Request Pickup</Button>
+              </CardFooter>
+            </Card>
+          ))}
+        </div>
       )}
     </div>
   );
