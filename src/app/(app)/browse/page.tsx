@@ -7,11 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog";
-import { MapPin, CalendarClock, Search, Filter, Loader2, AlertTriangle, Info, CheckCircle, XCircle, Handshake } from "lucide-react";
+import { MapPin, CalendarClock, Search, Filter, Loader2, AlertTriangle, Info, CheckCircle, XCircle, Handshake, Send, Bike } from "lucide-react";
 import Image from "next/image";
 import { db } from "@/lib/firebase";
-import { collection, query, where, orderBy, getDocs, Timestamp, doc, updateDoc } from "firebase/firestore";
-import type { FoodPost } from "@/types";
+import { collection, query, where, orderBy, getDocs, Timestamp, doc, updateDoc, addDoc } from "firebase/firestore";
+import type { FoodPost, FoodDeliveryRequest } from "@/types";
 import { format } from "date-fns";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -33,7 +33,9 @@ export default function BrowsePage() {
     try {
       const q = query(
         collection(db, "food_donations"),
-        where("status", "==", "available"),
+        // Fetch items that are explicitly 'available' or still marked as 'requested' (legacy or general interest)
+        // Consider if 'requested' should still be fetched for general browsing if it means "interest shown" vs "actively being processed"
+        where("status", "in", ["available", "requested"]), 
         orderBy("postedAt", "desc")
       );
       const querySnapshot = await getDocs(q);
@@ -54,18 +56,18 @@ export default function BrowsePage() {
     fetchFoodItems();
   }, []);
 
-  const handleRequestFood = (item: FoodPost) => {
+  const handleOpenRequestDialog = (item: FoodPost) => {
     setSelectedItem(item);
     setIsRequestDialogOpen(true);
   };
 
-  const handleConfirmRequest = async () => {
-    if (!currentUser || userData?.role !== 'recipient') {
-      toast({ title: "Action Not Allowed", description: "Only recipients can request food items.", variant: "destructive" });
+  const handleSelfPickup = async () => {
+    if (!currentUser || userData?.role !== 'recipient' || !selectedItem || !selectedItem.id) {
+      toast({ title: "Action Not Allowed", description: "Unable to process self-pickup request.", variant: "destructive" });
       return;
     }
-    if (!selectedItem || selectedItem.status !== 'available' || !selectedItem.id) {
-      toast({ title: "Cannot Request", description: "This item is no longer available or cannot be requested.", variant: "destructive" });
+    if (selectedItem.status !== 'available' && selectedItem.status !== 'requested') {
+      toast({ title: "Cannot Request", description: "This item is no longer available for pickup.", variant: "destructive" });
       return;
     }
 
@@ -73,28 +75,88 @@ export default function BrowsePage() {
     try {
       const itemRef = doc(db, "food_donations", selectedItem.id);
       await updateDoc(itemRef, {
-        status: "requested",
-        requestedByUid: currentUser.uid,
+        status: "claimed_by_recipient",
+        claimedByUid: currentUser.uid,
+        requestedByUid: currentUser.uid, // also set requestedBy for general tracking
+        claimType: "self-pickup",
         requestedAt: Timestamp.now(),
       });
 
       setFoodItems(prevItems =>
         prevItems.map(item =>
           item.id === selectedItem.id
-            ? { ...item, status: "requested", requestedByUid: currentUser.uid, requestedAt: Timestamp.now() }
+            ? { ...item, status: "claimed_by_recipient", claimedByUid: currentUser.uid, requestedByUid: currentUser.uid, claimType: "self-pickup", requestedAt: Timestamp.now() }
             : item
-        )
+        ).filter(item => item.status === 'available' || item.status === 'requested') // Or refetch
       );
-      toast({ title: "Request Successful!", description: `You have requested ${selectedItem.foodType}.` });
+      toast({ title: "Pickup Confirmed!", description: `You will pick up ${selectedItem.foodType}. Please check pickup instructions.` });
       setIsRequestDialogOpen(false);
       setSelectedItem(null);
     } catch (err: any) {
-      console.error("Error confirming request:", err);
-      toast({ title: "Request Failed", description: err.message || "Could not submit your request. Please try again.", variant: "destructive" });
+      console.error("Error confirming self-pickup:", err);
+      toast({ title: "Request Failed", description: err.message || "Could not submit your self-pickup request.", variant: "destructive" });
     } finally {
       setIsSubmittingRequest(false);
     }
   };
+
+  const handleRequestVolunteerDelivery = async () => {
+    if (!currentUser || userData?.role !== 'recipient' || !selectedItem || !selectedItem.id) {
+      toast({ title: "Action Not Allowed", description: "Unable to process delivery request.", variant: "destructive" });
+      return;
+    }
+     if (selectedItem.status !== 'available' && selectedItem.status !== 'requested') {
+      toast({ title: "Cannot Request", description: "This item is no longer available for delivery request.", variant: "destructive" });
+      return;
+    }
+
+    setIsSubmittingRequest(true);
+    try {
+      // 1. Create a new delivery request document
+      const deliveryRequestData: FoodDeliveryRequest = {
+        donationId: selectedItem.id,
+        donorId: selectedItem.donorId,
+        donorName: selectedItem.donorName,
+        foodType: selectedItem.foodType,
+        quantity: selectedItem.quantity,
+        pickupLocation: selectedItem.location,
+        pickupLatitude: selectedItem.latitude,
+        pickupLongitude: selectedItem.longitude,
+        pickupInstructions: selectedItem.pickupInstructions,
+        recipientId: currentUser.uid,
+        recipientName: userData.name || undefined,
+        status: "pending_volunteer_assignment",
+        requestedAt: Timestamp.now(),
+      };
+      await addDoc(collection(db, "food_delivery_requests"), deliveryRequestData);
+
+      // 2. Update the original food post
+      const itemRef = doc(db, "food_donations", selectedItem.id);
+      await updateDoc(itemRef, {
+        status: "delivery_requested",
+        requestedByUid: currentUser.uid,
+        claimType: "volunteer-delivery",
+        requestedAt: Timestamp.now(), // Update requestedAt on the food post as well
+      });
+
+      setFoodItems(prevItems =>
+        prevItems.map(item =>
+          item.id === selectedItem.id
+            ? { ...item, status: "delivery_requested", requestedByUid: currentUser.uid, claimType: "volunteer-delivery", requestedAt: Timestamp.now() }
+            : item
+        ).filter(item => item.status === 'available' || item.status === 'requested') // Or refetch
+      );
+      toast({ title: "Delivery Requested!", description: `Volunteers have been notified about your request for ${selectedItem.foodType}.` });
+      setIsRequestDialogOpen(false);
+      setSelectedItem(null);
+    } catch (err: any) {
+      console.error("Error requesting volunteer delivery:", err);
+      toast({ title: "Delivery Request Failed", description: err.message || "Could not submit your delivery request.", variant: "destructive" });
+    } finally {
+      setIsSubmittingRequest(false);
+    }
+  };
+
 
   const openGoogleMaps = (item: FoodPost) => {
     let mapsUrl = `https://www.google.com/maps/search/?api=1&query=`;
@@ -105,6 +167,32 @@ export default function BrowsePage() {
     }
     window.open(mapsUrl, '_blank');
   };
+
+  const getStatusBadgeVariant = (status: FoodPost["status"]) => {
+    switch (status) {
+      case "available": return "default"; // Or a specific "available" color
+      case "requested": return "secondary"; // General interest
+      case "claimed_by_recipient": return "outline"; // e.g. Yellowish
+      case "delivery_requested": return "outline"; // e.g. Bluish
+      case "volunteer_assigned": return "outline"; // e.g. Purplish
+      case "fulfilled": return "default"; // e.g. Greenish
+      case "expired": return "destructive";
+      default: return "secondary";
+    }
+  };
+  
+  const getStatusText = (status: FoodPost["status"]) => {
+     switch (status) {
+      case "available": return "Available";
+      case "requested": return "Requested";
+      case "claimed_by_recipient": return "Claimed (Self Pickup)";
+      case "delivery_requested": return "Delivery Requested";
+      case "volunteer_assigned": return "Volunteer Assigned";
+      case "fulfilled": return "Fulfilled";
+      case "expired": return "Expired";
+      default: return status.charAt(0).toUpperCase() + status.slice(1);
+    }
+  }
 
   return (
     <div className="space-y-8">
@@ -170,13 +258,11 @@ export default function BrowsePage() {
                   objectFit="cover"
                   data-ai-hint={!item.imageUrl ? "food placeholder" : undefined}
                 />
-                {item.status !== 'available' && (
-                   <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                     <Badge variant={item.status === 'requested' ? "secondary" : "destructive"} className="text-lg px-4 py-2">
-                       {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-                     </Badge>
-                   </div>
-                )}
+                 <div className="absolute top-2 right-2">
+                    <Badge variant={getStatusBadgeVariant(item.status)} className="text-xs px-2 py-1">
+                       {getStatusText(item.status)}
+                    </Badge>
+                  </div>
               </div>
               <CardHeader>
                 <CardTitle>{item.foodType}</CardTitle>
@@ -204,16 +290,12 @@ export default function BrowsePage() {
               <CardFooter>
                 <Button
                   className="w-full"
-                  onClick={() => handleRequestFood(item)}
-                  disabled={item.status !== 'available' || !currentUser || userData?.role !== 'recipient'}
+                  onClick={() => handleOpenRequestDialog(item)}
+                  disabled={ (item.status !== 'available' && item.status !== 'requested') || !currentUser || userData?.role !== 'recipient'}
                 >
-                  {item.status === 'available' ? (
+                   {(item.status === 'available' || item.status === 'requested') ? (
                     <>
-                      <Handshake className="mr-2 h-4 w-4" /> Request Pickup
-                    </>
-                  ) : item.status === 'requested' ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Requested
+                      <Handshake className="mr-2 h-4 w-4" /> Request Food
                     </>
                   ) : (
                     <>
@@ -236,10 +318,10 @@ export default function BrowsePage() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Info className="h-6 w-6 text-primary" />
-                Request: {selectedItem.foodType}
+                Request Options: {selectedItem.foodType}
               </DialogTitle>
               <DialogDescription>
-                Review the details below and confirm your request.
+                Choose how you would like to receive this item.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
@@ -252,40 +334,55 @@ export default function BrowsePage() {
                   Exact coordinates are available for mapping.
                 </p>
               )}
+              {selectedItem.pickupInstructions && (
+                <p><strong>Pickup Instructions:</strong> {selectedItem.pickupInstructions}</p>
+              )}
               {selectedItem.expiryDate && (
                 <p><strong>Expires by:</strong> {format(selectedItem.expiryDate.toDate(), "PPP")}</p>
-              )}
-              {selectedItem.pickupInstructions && (
-                <p><strong>Instructions:</strong> {selectedItem.pickupInstructions}</p>
               )}
               {selectedItem.postedAt && (
                   <p className="text-xs text-muted-foreground pt-1">
                     Posted: {format(selectedItem.postedAt.toDate(), "PPP p")}
                   </p>
               )}
-               <Button variant="outline" onClick={() => openGoogleMaps(selectedItem)} className="w-full">
-                <MapPin className="mr-2 h-4 w-4" /> View in Map
+               <Button variant="outline" onClick={() => openGoogleMaps(selectedItem)} className="w-full mt-2">
+                <MapPin className="mr-2 h-4 w-4" /> View Pickup Location on Map
               </Button>
             </div>
-            <DialogFooter className="sm:justify-between gap-2">
-              <DialogClose asChild>
-                <Button type="button" variant="outline">
-                  Cancel
-                </Button>
-              </DialogClose>
+            <DialogFooter className="sm:justify-between gap-2 flex-col sm:flex-row">
+               <Button 
+                type="button" 
+                variant="outline"
+                onClick={handleRequestVolunteerDelivery} 
+                disabled={isSubmittingRequest || (selectedItem.status !== 'available' && selectedItem.status !== 'requested') || !currentUser || userData?.role !== 'recipient'}
+                className="w-full sm:w-auto"
+              >
+                {isSubmittingRequest ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Bike className="mr-2 h-4 w-4" /> // Icon for volunteer delivery
+                )}
+                Request Volunteer Delivery
+              </Button>
               <Button 
                 type="button" 
-                onClick={handleConfirmRequest} 
-                disabled={isSubmittingRequest || selectedItem.status !== 'available' || !currentUser || userData?.role !== 'recipient'}
+                onClick={handleSelfPickup} 
+                disabled={isSubmittingRequest || (selectedItem.status !== 'available' && selectedItem.status !== 'requested') || !currentUser || userData?.role !== 'recipient'}
+                className="w-full sm:w-auto"
               >
                 {isSubmittingRequest ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <CheckCircle className="mr-2 h-4 w-4" />
                 )}
-                Confirm Request
+                I'll Pick It Up Myself
               </Button>
             </DialogFooter>
+             <DialogClose asChild>
+                <Button type="button" variant="ghost" className="mt-4 w-full">
+                  Cancel
+                </Button>
+              </DialogClose>
           </DialogContent>
         </Dialog>
       )}

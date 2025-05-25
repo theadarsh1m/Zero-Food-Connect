@@ -1,43 +1,108 @@
+
+"use client";
+
+import * as React from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Package, User, Clock, CheckCircle2, Truck } from "lucide-react";
+import { MapPin, Package, User, Clock, CheckCircle2, Truck, Loader2, AlertTriangle, Search } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { db } from "@/lib/firebase";
+import { collection, query, where, orderBy, getDocs, Timestamp, doc, updateDoc } from "firebase/firestore";
+import type { FoodDeliveryRequest } from "@/types";
+import { format } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
 
-// Mock data for pickup requests
-const mockPickupRequests = [
-  {
-    id: "req1",
-    foodType: "Fresh Vegetables",
-    quantity: "Approx. 10 kg",
-    donorLocation: "Downtown Community Center",
-    recipientName: "City Soup Kitchen",
-    recipientLocation: "12 Elm Street",
-    status: "pending_pickup",
-    postedTime: "2 hours ago"
-  },
-  {
-    id: "req2",
-    foodType: "Bakery Surplus",
-    quantity: "3 boxes",
-    donorLocation: "Maria's Cafe, 123 Main St",
-    recipientName: "North End Shelter",
-    recipientLocation: "45 Oak Avenue",
-    status: "assigned_to_volunteer", // This request is already taken by another volunteer
-    postedTime: "45 mins ago"
-  },
-  {
-    id: "req3",
-    foodType: "Canned Goods",
-    quantity: "2 large bags",
-    donorLocation: "Residential Address (details on acceptance)",
-    recipientName: "Westside Food Bank",
-    recipientLocation: "78 Pine Road",
-    status: "pending_pickup",
-    postedTime: "5 hours ago"
-  }
-];
+export default function VolunteerPickupsPage() {
+  const [pickupRequests, setPickupRequests] = React.useState<FoodDeliveryRequest[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [isAccepting, setIsAccepting] = React.useState<string | null>(null); // Stores ID of item being accepted
 
-export default function PickupsPage() {
+  const { currentUser, userData } = useAuth();
+  const { toast } = useToast();
+
+  const fetchPickupRequests = async () => {
+    if (!currentUser || userData?.role !== 'volunteer') {
+      setError("You must be logged in as a volunteer to view pickup requests.");
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    setError(null);
+    try {
+      const q = query(
+        collection(db, "food_delivery_requests"),
+        where("status", "==", "pending_volunteer_assignment"),
+        orderBy("requestedAt", "asc") // Show oldest requests first
+      );
+      const querySnapshot = await getDocs(q);
+      const fetchedRequests = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as FoodDeliveryRequest[];
+      setPickupRequests(fetchedRequests);
+    } catch (err: any) {
+      console.error("Error fetching pickup requests:", err);
+      setError("Failed to load pickup requests. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchPickupRequests();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser, userData]); // Rerun if user changes
+
+  const handleAcceptPickup = async (request: FoodDeliveryRequest) => {
+    if (!currentUser || userData?.role !== 'volunteer' || !request.id) {
+      toast({ title: "Action Not Allowed", description: "Unable to accept this pickup.", variant: "destructive" });
+      return;
+    }
+    if (request.status !== 'pending_volunteer_assignment') {
+      toast({ title: "Already Handled", description: "This pickup request is no longer pending.", variant: "default" });
+      return;
+    }
+
+    setIsAccepting(request.id);
+    try {
+      const requestRef = doc(db, "food_delivery_requests", request.id);
+      await updateDoc(requestRef, {
+        status: "assigned_to_volunteer",
+        assignedVolunteerId: currentUser.uid,
+        assignedVolunteerName: userData.name || "Volunteer",
+        assignedAt: Timestamp.now(),
+      });
+
+      // Also update the original food_donation post status
+      const donationRef = doc(db, "food_donations", request.donationId);
+      await updateDoc(donationRef, {
+        status: "volunteer_assigned", 
+      });
+
+
+      setPickupRequests(prevRequests => prevRequests.filter(r => r.id !== request.id));
+      toast({ title: "Pickup Accepted!", description: `You have accepted the pickup for ${request.foodType}.` });
+    } catch (err: any) {
+      console.error("Error accepting pickup:", err);
+      toast({ title: "Acceptance Failed", description: err.message || "Could not accept the pickup. Please try again.", variant: "destructive" });
+    } finally {
+      setIsAccepting(null);
+    }
+  };
+  
+  const openGoogleMaps = (request: FoodDeliveryRequest) => {
+    let mapsUrl = `https://www.google.com/maps/search/?api=1&query=`;
+    if (request.pickupLatitude && request.pickupLongitude) {
+      mapsUrl += `${request.pickupLatitude},${request.pickupLongitude}`;
+    } else {
+      mapsUrl += encodeURIComponent(request.pickupLocation);
+    }
+    window.open(mapsUrl, '_blank');
+  };
+
+
   return (
     <div className="space-y-8">
       <div>
@@ -47,62 +112,93 @@ export default function PickupsPage() {
         </p>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
-        {mockPickupRequests.map((request) => (
-          <Card key={request.id} className="shadow-lg hover:shadow-xl transition-shadow duration-300">
-            <CardHeader>
-              <div className="flex justify-between items-start">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Truck className="h-5 w-5 text-primary" /> {request.foodType}
-                  </CardTitle>
-                  <CardDescription>
-                    <Badge variant={request.status === "pending_pickup" ? "default" : "secondary"} className="mt-1">
-                      {request.status === "pending_pickup" ? "Available for Pickup" : "Assigned"}
-                    </Badge>
-                  </CardDescription>
-                </div>
-                <span className="text-xs text-muted-foreground flex items-center">
-                  <Clock className="mr-1 h-3 w-3" /> {request.postedTime}
-                </span>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-start text-sm">
-                <Package className="mr-2 h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
-                <div><strong>Quantity:</strong> {request.quantity}</div>
-              </div>
-              <div className="flex items-start text-sm">
-                <MapPin className="mr-2 h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
-                <div><strong>From:</strong> {request.donorLocation}</div>
-              </div>
-              <div className="flex items-start text-sm">
-                <User className="mr-2 h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
-                <div><strong>To:</strong> {request.recipientName} ({request.recipientLocation})</div>
-              </div>
-            </CardContent>
-            <CardFooter className="flex justify-end gap-2">
-              <Button variant="outline" size="sm">View Details</Button>
-              {request.status === "pending_pickup" && (
-                <Button size="sm">
-                  <CheckCircle2 className="mr-2 h-4 w-4" /> Accept Pickup
-                </Button>
-              )}
-              {request.status === "assigned_to_volunteer" && (
-                 <Button size="sm" disabled>Already Assigned</Button>
-              )}
-            </CardFooter>
-          </Card>
-        ))}
-      </div>
-      {mockPickupRequests.length === 0 && (
-        <Card>
+      {isLoading && (
+        <div className="flex justify-center items-center py-10">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+          <p className="ml-3 text-lg">Loading pickup requests...</p>
+        </div>
+      )}
+
+      {!isLoading && error && (
+        <Card className="border-destructive bg-destructive/10">
+          <CardContent className="py-10 flex flex-col items-center text-destructive text-center">
+            <AlertTriangle className="w-12 h-12 mb-4" />
+            <h3 className="text-xl font-semibold mb-2">Oops! Something went wrong.</h3>
+            <p>{error}</p>
+            {userData?.role !== 'volunteer' && (
+              <Button onClick={() => router.push(`/${userData?.role || 'dashboard'}`)} className="mt-4">Go to My Dashboard</Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+      
+      {!isLoading && !error && pickupRequests.length === 0 && (
+         <Card>
           <CardContent className="py-12 flex flex-col items-center justify-center">
-            <Truck className="w-16 h-16 text-muted-foreground mb-4" />
-            <h3 className="text-xl font-semibold">No Pickup Requests Available</h3>
+            <Search className="w-16 h-16 text-muted-foreground mb-4" />
+            <h3 className="text-xl font-semibold">No Pending Pickup Requests</h3>
             <p className="text-muted-foreground">Thank you for your willingness to help! Check back soon for new requests.</p>
           </CardContent>
         </Card>
+      )}
+
+      {!isLoading && !error && pickupRequests.length > 0 && (
+        <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
+          {pickupRequests.map((request) => (
+            <Card key={request.id} className="shadow-lg hover:shadow-xl transition-shadow duration-300">
+              <CardHeader>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Truck className="h-5 w-5 text-primary" /> {request.foodType}
+                    </CardTitle>
+                    <CardDescription>
+                      <Badge variant={request.status === "pending_volunteer_assignment" ? "default" : "secondary"} className="mt-1">
+                        {request.status === "pending_volunteer_assignment" ? "Available for Pickup" : request.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                      </Badge>
+                    </CardDescription>
+                  </div>
+                  <span className="text-xs text-muted-foreground flex items-center">
+                    <Clock className="mr-1 h-3 w-3" /> Requested: {format(request.requestedAt.toDate(), "PPp")}
+                  </span>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-start text-sm">
+                  <Package className="mr-2 h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
+                  <div><strong>Quantity:</strong> {request.quantity}</div>
+                </div>
+                <div className="flex items-start text-sm">
+                  <MapPin className="mr-2 h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
+                  <div><strong>From (Donor):</strong> {request.donorName || 'Anonymous'} at {request.pickupLocation}</div>
+                </div>
+                 <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => openGoogleMaps(request)}>
+                   View Pickup Map
+                 </Button>
+                <div className="flex items-start text-sm">
+                  <User className="mr-2 h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
+                  <div><strong>To (Recipient):</strong> {request.recipientName || 'Recipient'}</div>
+                </div>
+                {request.pickupInstructions && (
+                    <p className="text-xs text-muted-foreground border-l-2 pl-2"><strong>Instructions:</strong> {request.pickupInstructions}</p>
+                )}
+              </CardContent>
+              <CardFooter className="flex justify-end gap-2">
+                {/* <Button variant="outline" size="sm">View Details</Button> */}
+                {request.status === "pending_volunteer_assignment" && (
+                  <Button 
+                    size="sm" 
+                    onClick={() => handleAcceptPickup(request)}
+                    disabled={isAccepting === request.id || !currentUser || userData?.role !== 'volunteer'}
+                  >
+                    {isAccepting === request.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" /> }
+                     Accept Pickup
+                  </Button>
+                )}
+              </CardFooter>
+            </Card>
+          ))}
+        </div>
       )}
     </div>
   );
