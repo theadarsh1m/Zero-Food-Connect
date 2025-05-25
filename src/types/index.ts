@@ -1,48 +1,48 @@
 
+import type { Timestamp } from "firebase/firestore"; // Import Timestamp
+
 export type Role = "donor" | "recipient" | "volunteer" | "admin";
 
 export interface User {
-  uid: string; // Changed from id to uid for clarity with Firebase auth
+  uid: string;
   email: string | null;
   name: string | null;
   role: Role;
-  // Add other user-specific fields if needed
-  // e.g., photoURL?: string;
-  // e.g., organizationName?: string; (for NGO recipients)
 }
 
 export interface FoodPost {
-  id: string;
+  id?: string; // Firestore document ID, will be set after creation or if needed client-side
   donorId: string;
-  type: string; // e.g., "Cooked Meals", "Fresh Produce", "Bakery Items"
-  quantity: string; // e.g., "10 meals", "5 kg", "2 boxes"
-  location: string; // For simplicity, text for now. Could be GeoPoint later.
+  donorName?: string; // Store donor's name for easier display
+  foodType: string;
+  quantity: string;
+  location: string; // Could be more structured (e.g., address object) or GeoPoint later
   pickupInstructions?: string;
-  expiryWindow: Date | string; // Date object or ISO string
-  imageUrl?: string;
-  postedAt: Date;
+  expiryDate: Timestamp; // Store as Firestore Timestamp
+  imageUrl?: string; // Public URL of the image in Firebase Storage
+  imagePath?: string; // Path to the image in Firebase Storage (for deletion/management)
+  postedAt: Timestamp; // Store as Firestore Timestamp
   status: "available" | "requested" | "fulfilled" | "expired";
 }
 
 export interface PickupRequest {
   id: string;
   foodPostId: string;
-  recipientId: string; // User ID of NGO or individual
-  volunteerId?: string | null; // User ID of volunteer who accepted
-  requestedAt: Date;
+  recipientId: string;
+  volunteerId?: string | null;
+  requestedAt: Timestamp; // Changed to Timestamp
   status: "pending_pickup" | "assigned_to_volunteer" | "fulfilled" | "cancelled";
-  fulfilledAt?: Date;
+  fulfilledAt?: Timestamp; // Changed to Timestamp
 }
 
 export interface ImpactStats {
   totalMealsServed: number;
   kgFoodSaved: number;
-  // Potentially more stats: activeVolunteers, donationsThisMonth etc.
 }
 
 export interface NavItem {
   href: string;
   label: string;
   icon: React.ElementType;
-  roles?: Role[]; // Optional: roles that can see this nav item
+  roles?: Role[];
 }

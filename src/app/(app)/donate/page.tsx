@@ -9,18 +9,109 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { CalendarIcon, PackagePlus } from "lucide-react";
+import { CalendarIcon, PackagePlus, Loader2, UploadCloud } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-// Firebase Timestamp can be imported if you are ready to convert for Firestore
-// import { Timestamp } from "firebase/firestore";
+import { Timestamp, collection, addDoc } from "firebase/firestore";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { useAuth } from "@/contexts/AuthContext";
+import { db, storage } from "@/lib/firebase";
+import { useToast } from "@/hooks/use-toast";
+import type { FoodPost } from "@/types";
+import Image from "next/image";
 
 export default function DonatePage() {
-  const [selectedDate, setSelectedDate] = React.useState<Date | undefined>();
+  const { currentUser, userData } = useAuth();
+  const { toast } = useToast();
 
-  // When you submit the form, if selectedDate is defined, you can convert it for Firestore:
-  // const firestoreTimestamp = selectedDate ? Timestamp.fromDate(selectedDate) : null;
-  // Then save firestoreTimestamp to your database.
+  const [foodType, setFoodType] = React.useState("");
+  const [quantity, setQuantity] = React.useState("");
+  const [location, setLocation] = React.useState("");
+  const [selectedDate, setSelectedDate] = React.useState<Date | undefined>();
+  const [pickupInstructions, setPickupInstructions] = React.useState("");
+  const [foodImageFile, setFoodImageFile] = React.useState<File | null>(null);
+  const [foodImagePreview, setFoodImagePreview] = React.useState<string | null>(null);
+  const [isLoading, setIsLoading] = React.useState(false);
+
+  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setFoodImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFoodImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setFoodImageFile(null);
+      setFoodImagePreview(null);
+    }
+  };
+
+  const resetForm = () => {
+    setFoodType("");
+    setQuantity("");
+    setLocation("");
+    setSelectedDate(undefined);
+    setPickupInstructions("");
+    setFoodImageFile(null);
+    setFoodImagePreview(null);
+    // Clear the file input visually
+    const fileInput = document.getElementById('foodImage') as HTMLInputElement;
+    if (fileInput) {
+        fileInput.value = "";
+    }
+  };
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!currentUser || userData?.role !== 'donor') {
+      toast({ title: "Access Denied", description: "You must be logged in as a donor to post donations.", variant: "destructive" });
+      return;
+    }
+    if (!foodType || !quantity || !location || !selectedDate) {
+      toast({ title: "Missing Fields", description: "Please fill in all required fields (Food Type, Quantity, Location, Expiry Date).", variant: "destructive" });
+      return;
+    }
+
+    setIsLoading(true);
+    let imageUrl: string | undefined = undefined;
+    let imagePath: string | undefined = undefined;
+
+    try {
+      if (foodImageFile) {
+        const uniqueFileName = `${Date.now()}-${foodImageFile.name}`;
+        const imageRef = storageRef(storage, `food_donations_images/${currentUser.uid}/${uniqueFileName}`);
+        const uploadResult = await uploadBytes(imageRef, foodImageFile);
+        imageUrl = await getDownloadURL(uploadResult.ref);
+        imagePath = uploadResult.ref.fullPath;
+      }
+
+      const donationData: FoodPost = {
+        donorId: currentUser.uid,
+        donorName: userData?.name || "Anonymous Donor",
+        foodType,
+        quantity,
+        location,
+        expiryDate: Timestamp.fromDate(selectedDate),
+        postedAt: Timestamp.now(),
+        status: "available",
+        ...(pickupInstructions && { pickupInstructions }),
+        ...(imageUrl && { imageUrl }),
+        ...(imagePath && { imagePath }),
+      };
+
+      await addDoc(collection(db, "food_donations"), donationData);
+
+      toast({ title: "Donation Posted!", description: "Your food donation has been successfully listed." });
+      resetForm();
+    } catch (error: any) {
+      console.error("Error posting donation:", error);
+      toast({ title: "Post Failed", description: error.message || "Could not post your donation. Please try again.", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -38,71 +129,91 @@ export default function DonatePage() {
             New Food Donation
           </CardTitle>
           <CardDescription>
-            Your contribution helps reduce waste and feed communities.
+            Your contribution helps reduce waste and feed communities. All fields marked * are required.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <Label htmlFor="foodType">Food Type</Label>
-              <Input id="foodType" placeholder="e.g., Fresh Produce, Cooked Meals" />
+        <form onSubmit={handleSubmit}>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label htmlFor="foodType">Food Type *</Label>
+                <Input id="foodType" placeholder="e.g., Fresh Produce, Cooked Meals" value={foodType} onChange={(e) => setFoodType(e.target.value)} disabled={isLoading} required />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="quantity">Quantity *</Label>
+                <Input id="quantity" placeholder="e.g., 5 kg, 10 meals, 2 boxes" value={quantity} onChange={(e) => setQuantity(e.target.value)} disabled={isLoading} required />
+              </div>
             </div>
+            
             <div className="space-y-2">
-              <Label htmlFor="quantity">Quantity</Label>
-              <Input id="quantity" placeholder="e.g., 5 kg, 10 meals, 2 boxes" />
+              <Label htmlFor="location">Pickup Location *</Label>
+              <Input id="location" placeholder="Full address or general area" value={location} onChange={(e) => setLocation(e.target.value)} disabled={isLoading} required />
             </div>
-          </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="location">Pickup Location</Label>
-            <Input id="location" placeholder="Full address or general area" />
-          </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="expiryDate">Expiry Date/Window</Label>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant={"outline"}
-                  className={cn(
-                    "w-full justify-start text-left font-normal",
-                    !selectedDate && "text-muted-foreground"
-                  )}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {selectedDate ? format(selectedDate, "PPP") : <span>Pick a date</span>}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  selected={selectedDate}
-                  onSelect={setSelectedDate}
-                  disabled={(date) =>
-                    date < new Date(new Date().setHours(0, 0, 0, 0)) // Disable past dates (today is allowed)
-                  }
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-            <p className="text-xs text-muted-foreground">
-              Select the date by which the food should be used or picked up.
-            </p>
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="expiryDate">Expiry Date/Window *</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={"outline"}
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !selectedDate && "text-muted-foreground"
+                    )}
+                    disabled={isLoading}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {selectedDate ? format(selectedDate, "PPP") : <span>Pick a date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={setSelectedDate}
+                    disabled={(date) =>
+                      date < new Date(new Date().setHours(0, 0, 0, 0)) || isLoading
+                    }
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+              <p className="text-xs text-muted-foreground">
+                Select the date by which the food should be used or picked up.
+              </p>
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="pickupInstructions">Pickup Instructions (Optional)</Label>
-            <Textarea id="pickupInstructions" placeholder="e.g., Contact John at 555-1234 upon arrival. Food is in the lobby fridge." />
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="pickupInstructions">Pickup Instructions (Optional)</Label>
+              <Textarea id="pickupInstructions" placeholder="e.g., Contact John at 555-1234 upon arrival. Food is in the lobby fridge." value={pickupInstructions} onChange={(e) => setPickupInstructions(e.target.value)} disabled={isLoading} />
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="foodImage">Upload Image (Optional)</Label>
-            <Input id="foodImage" type="file" />
-            <p className="text-xs text-muted-foreground">A picture can help recipients understand the donation better.</p>
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="foodImage">Upload Image (Optional)</Label>
+              <Input id="foodImage" type="file" accept="image/*" onChange={handleImageChange} disabled={isLoading} />
+              {foodImagePreview && (
+                <div className="mt-2 relative w-full h-48 border rounded-md overflow-hidden">
+                   <Image src={foodImagePreview} alt="Food image preview" layout="fill" objectFit="cover" />
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">A picture can help recipients understand the donation better.</p>
+            </div>
 
-          <Button type="submit" className="w-full">Post Donation</Button>
-        </CardContent>
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Posting Donation...
+                </>
+              ) : (
+                <>
+                  <UploadCloud className="mr-2 h-4 w-4" />
+                  Post Donation
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </form>
       </Card>
     </div>
   );

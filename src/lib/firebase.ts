@@ -4,6 +4,7 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 // Modified import for Firestore:
 import { initializeFirestore, memoryLocalCache } from "firebase/firestore";
+import { getStorage } from "firebase/storage"; // Added for Firebase Storage
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
 
@@ -24,11 +25,11 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 
 // Initialize Firestore with in-memory cache
-// This disables offline persistence via IndexedDB for this db instance,
-// which can help prevent "client is offline" errors if they are related
-// to the persistence layer.
 const db = initializeFirestore(app, {
   localCache: memoryLocalCache()
 });
 
-export { app, auth, db };
+// Initialize Firebase Storage
+const storage = getStorage(app); // Added
+
+export { app, auth, db, storage }; // Export storage
