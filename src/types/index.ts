@@ -8,6 +8,8 @@ export interface User {
   email: string | null;
   name: string | null;
   role: Role;
+  profilePictureUrl?: string | null; // Added for profile picture
+  phoneNumber?: string | null;      // Added for phone number
 }
 
 export interface FoodPost {
@@ -50,3 +52,4 @@ export interface NavItem {
   icon: React.ElementType;
   roles?: Role[];
 }
+

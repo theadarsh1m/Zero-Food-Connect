@@ -13,7 +13,7 @@ import {
   LogOut,
   UserCircle,
   Menu,
-  Settings,
+  Settings, // Added Settings icon
   LogIn,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -27,18 +27,18 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger, SheetClose } from "@/components/ui/sheet";
 import type { NavItem } from "@/types";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation"; // Added useRouter
 import { cn } from "@/lib/utils";
-import { useAuth } from "@/contexts/AuthContext"; // Import useAuth
+import { useAuth } from "@/contexts/AuthContext"; 
+import Image from "next/image"; // For profile picture
 
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["donor", "recipient", "volunteer", "admin"] },
   { href: "/donor", label: "My Donations Hub", icon: CookingPot, roles: ["donor"] },
   { href: "/recipient", label: "Find Food Hub", icon: Search, roles: ["recipient"] },
   { href: "/volunteer", label: "Pickup Hub", icon: HandHelping, roles: ["volunteer"] },
-  // More specific role-based dashboard links for clarity
   { href: "/donate", label: "Post New Donation", icon: CookingPot, roles: ["donor"] },
-  { href: "/browse", label: "Browse Available Food", icon: Search, roles: ["recipient"] },
+  { href: "/browse", label: "Browse Available Food", icon: Search, roles: ["recipient", "volunteer", "donor", "admin"] }, // All roles can browse
   { href: "/pickups", label: "Available Pickups", icon: HandHelping, roles: ["volunteer"] },
   { href: "/history", label: "Activity History", icon: History, roles: ["donor", "recipient", "volunteer", "admin"] },
   { href: "/tips", label: "AI Food Tips", icon: Lightbulb, roles: ["donor", "recipient", "volunteer", "admin"] },
@@ -47,11 +47,15 @@ const navItems: NavItem[] = [
 
 export default function AppHeader() {
   const pathname = usePathname();
+  const router = useRouter(); // For navigation
   const { currentUser, userData, logoutUser, loadingAuth } = useAuth();
 
   const accessibleNavItems = navItems.filter(item => {
-    if (loadingAuth) return false; // Don't show nav items while auth state is loading
-    if (!currentUser || !userData?.role) return item.href === "/tips"; // Only show AI tips if not logged in or role not determined
+    if (loadingAuth) return false; 
+    if (!currentUser || !userData?.role) {
+        // Allow browsing and tips if not fully logged in, or if role is missing
+        return item.href === "/tips" || item.href === "/browse";
+    }
     return !item.roles || item.roles.includes(userData.role);
   });
 
@@ -59,9 +63,18 @@ export default function AppHeader() {
   const UserAvatar = () => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-          {/* TODO: Add Avatar component with fallback if user.photoURL exists */}
-          <UserCircle className="h-8 w-8" />
+        <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+          {userData?.profilePictureUrl ? (
+            <Image 
+              src={userData.profilePictureUrl} 
+              alt={userData.name || "User profile"}
+              fill
+              className="rounded-full object-cover"
+              sizes="40px"
+            />
+          ) : (
+            <UserCircle className="h-8 w-8" />
+          )}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end" forceMount>
@@ -77,7 +90,7 @@ export default function AppHeader() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => {/* TODO: Implement settings navigation */}}>
+        <DropdownMenuItem onClick={() => router.push('/settings')}>
           <Settings className="mr-2 h-4 w-4" />
           <span>Settings</span>
         </DropdownMenuItem>
@@ -114,8 +127,8 @@ export default function AppHeader() {
 
         <div className="flex items-center space-x-2">
           {loadingAuth ? (
-            <UserCircle className="h-8 w-8 text-muted-foreground animate-pulse" />
-          ) : currentUser ? (
+             <UserCircle className="h-8 w-8 text-muted-foreground animate-pulse" />
+          ) : currentUser && userData ? ( // Ensure userData is also present
             <div className="hidden md:block">
               <UserAvatar />
             </div>
@@ -135,14 +148,27 @@ export default function AppHeader() {
             </SheetTrigger>
             <SheetContent side="right" className="w-[300px] sm:w-[400px]">
               {currentUser && userData && (
-                 <div className="p-4 border-b">
-                    <p className="text-sm font-medium leading-none">{userData?.name || "User"}</p>
-                    <p className="text-xs leading-none text-muted-foreground">
-                      {currentUser?.email}
-                    </p>
-                    <p className="text-xs leading-none text-muted-foreground capitalize mt-1">
-                      Role: {userData?.role}
-                    </p>
+                 <div className="p-4 border-b flex items-center gap-3">
+                    {userData?.profilePictureUrl ? (
+                        <Image 
+                        src={userData.profilePictureUrl} 
+                        alt={userData.name || "User profile"}
+                        width={40}
+                        height={40}
+                        className="rounded-full object-cover"
+                        />
+                    ) : (
+                        <UserCircle className="h-10 w-10" />
+                    )}
+                    <div>
+                        <p className="text-sm font-medium leading-none">{userData?.name || "User"}</p>
+                        <p className="text-xs leading-none text-muted-foreground">
+                        {currentUser?.email}
+                        </p>
+                        <p className="text-xs leading-none text-muted-foreground capitalize mt-1">
+                        Role: {userData?.role}
+                        </p>
+                    </div>
                  </div>
               )}
               <nav className="flex flex-col space-y-1 p-4">
@@ -165,7 +191,7 @@ export default function AppHeader() {
                     <DropdownMenuSeparator />
                     <SheetClose asChild>
                       <Link
-                          href="/settings" // Placeholder for settings page
+                          href="/settings" 
                           className={cn(
                             "flex items-center space-x-2 rounded-md p-2 text-base font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
                             pathname === "/settings" ? "bg-accent text-accent-foreground" : "text-foreground"
