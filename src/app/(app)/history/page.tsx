@@ -12,6 +12,7 @@ import { collection, query, where, orderBy, getDocs, Timestamp } from "firebase/
 import type { FoodPost } from "@/types";
 import { format } from "date-fns";
 import Image from "next/image";
+import { cn } from "@/lib/utils"; // Added import for cn
 
 // Mock data for received and pickups - this would be dynamic based on user role and fetched data
 const mockHistory = {
@@ -210,5 +211,7 @@ export default function HistoryPage() {
     </div>
   );
 }
+
+    
 
     
