@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { User, Edit3, Image as ImageIcon, Shield, Trash2, Loader2 } from "lucide-react";
+import { User, Edit3, Image as ImageIcon, Shield, Trash2, Loader2, KeyRound } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -21,8 +21,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import NextImage from "next/image";
-
+// import NextImage from "next/image"; // Not directly used for preview if AvatarImage handles src update
 
 export default function SettingsPage() {
   const { 
@@ -32,18 +31,19 @@ export default function SettingsPage() {
     loadingAction, 
     updateUserProfileName, 
     updateUserProfilePicture,
-    deleteUserAccount 
+    deleteUserAccount,
+    sendPasswordResetLink 
   } = useAuth();
   const { toast } = useToast();
 
   const [name, setName] = React.useState(userData?.name || "");
   const [profilePictureFile, setProfilePictureFile] = React.useState<File | null>(null);
-  const [profilePicturePreview, setProfilePicturePreview] = React.useState<string | null>(userData?.profilePictureUrl || null);
+  const [photoURLPreview, setPhotoURLPreview] = React.useState<string | null>(userData?.photoURL || null); // Changed state name
 
   React.useEffect(() => {
     if (userData) {
       setName(userData.name || "");
-      setProfilePicturePreview(userData.profilePictureUrl || null);
+      setPhotoURLPreview(userData.photoURL || null); // Changed to photoURL
     }
   }, [userData]);
 
@@ -57,7 +57,7 @@ export default function SettingsPage() {
       setProfilePictureFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
-        setProfilePicturePreview(reader.result as string);
+        setPhotoURLPreview(reader.result as string); // Update photoURLPreview
       };
       reader.readAsDataURL(file);
     }
@@ -68,6 +68,10 @@ export default function SettingsPage() {
       toast({ title: "Validation Error", description: "Name cannot be empty.", variant: "destructive" });
       return;
     }
+    if (name.trim() === userData?.name) {
+        toast({ title: "No Change", description: "Name is already set to this value.", variant: "default" });
+        return;
+    }
     await updateUserProfileName(name.trim());
   };
 
@@ -77,13 +81,20 @@ export default function SettingsPage() {
       return;
     }
     await updateUserProfilePicture(profilePictureFile);
-    setProfilePictureFile(null); // Reset file input after upload attempt
+    setProfilePictureFile(null); 
   };
   
   const handleDeleteAccount = async () => {
     await deleteUserAccount();
-    // AlertDialog will close, navigation handled by AuthContext
   };
+
+  const handleSendPasswordReset = async () => {
+    if (currentUser?.email) {
+        await sendPasswordResetLink(currentUser.email);
+    } else {
+        toast({ title: "Error", description: "No email address found for this account.", variant: "destructive"});
+    }
+  }
 
   if (loadingAuth || !currentUser || !userData) {
     return (
@@ -102,7 +113,6 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      {/* Account Information Section */}
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -115,7 +125,8 @@ export default function SettingsPage() {
           <div className="flex flex-col items-center sm:flex-row sm:items-start gap-6">
             <div className="flex flex-col items-center gap-2">
               <Avatar className="h-24 w-24">
-                <AvatarImage src={profilePicturePreview || undefined} alt={userData.name || "User"} data-ai-hint="profile avatar" />
+                {/* Use photoURLPreview for immediate feedback, fallback to userData.photoURL */}
+                <AvatarImage src={photoURLPreview || undefined} alt={userData.name || "User"} data-ai-hint="profile avatar" />
                 <AvatarFallback>
                   {userData.name ? userData.name.charAt(0).toUpperCase() : <User className="h-10 w-10" />}
                 </AvatarFallback>
@@ -126,14 +137,14 @@ export default function SettingsPage() {
               <Input 
                 id="profilePictureInput" 
                 type="file" 
-                accept="image/*" 
+                accept="image/jpeg, image/png, image/webp" 
                 className="hidden"
                 onChange={handleProfilePictureChange}
                 disabled={loadingAction}
               />
               {profilePictureFile && (
                 <Button onClick={handleUpdateProfilePicture} size="sm" disabled={loadingAction} className="mt-2">
-                  {loadingAction ? <Loader2 className="animate-spin" /> : <ImageIcon className="mr-2 h-4 w-4" />} Upload New
+                  {loadingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-2 h-4 w-4" />} Upload New
                 </Button>
               )}
             </div>
@@ -143,14 +154,14 @@ export default function SettingsPage() {
                 <div className="flex gap-2">
                   <Input id="fullName" value={name} onChange={handleNameChange} disabled={loadingAction} />
                   <Button onClick={handleUpdateName} disabled={loadingAction || name === userData.name}>
-                    {loadingAction && name !== userData.name ? <Loader2 className="animate-spin" /> : <Edit3 className="mr-2 h-4 w-4" />} Update Name
+                    {loadingAction && name !== userData.name ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Edit3 className="mr-2 h-4 w-4" />} Update Name
                   </Button>
                 </div>
               </div>
               <div className="space-y-1">
                 <Label>Email Address</Label>
-                <Input value={userData.email || "Not available"} disabled />
-                <p className="text-xs text-muted-foreground">Email address cannot be changed here. Contact support for assistance.</p>
+                <Input value={currentUser.email || "Not available"} disabled />
+                <p className="text-xs text-muted-foreground">Email address cannot be changed directly for security reasons. Contact support if needed.</p>
               </div>
               <div className="space-y-1">
                 <Label>Role</Label>
@@ -166,7 +177,6 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Security Settings Section */}
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -179,10 +189,10 @@ export default function SettingsPage() {
           <div>
             <h3 className="font-medium mb-1">Change Password</h3>
             <p className="text-sm text-muted-foreground mb-2">
-              To change your password, we'll send a reset link to your registered email address.
+              To change your password, we&apos;ll send a reset link to your registered email address.
             </p>
-            <Button variant="outline" onClick={() => auth.sendPasswordResetEmail(currentUser.email!)} disabled={loadingAction || !currentUser?.email}>
-              {loadingAction ? <Loader2 className="animate-spin" /> : null} Send Password Reset Email
+            <Button variant="outline" onClick={handleSendPasswordReset} disabled={loadingAction || !currentUser?.email}>
+              {loadingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />} Send Password Reset Email
             </Button>
           </div>
           <div className="pt-4 border-t">
@@ -201,13 +211,13 @@ export default function SettingsPage() {
                   <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                   <AlertDialogDescription>
                     This action cannot be undone. This will permanently delete your
-                    account and remove all your data from our servers.
+                    account and remove all your data from our servers, including any profile images.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel disabled={loadingAction}>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleDeleteAccount} disabled={loadingAction} className="bg-destructive hover:bg-destructive/90">
-                    {loadingAction ? <Loader2 className="animate-spin" /> : null} Yes, delete account
+                  <AlertDialogAction onClick={handleDeleteAccount} disabled={loadingAction} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+                    {loadingAction ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Yes, delete account
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -216,7 +226,6 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
       
-      {/* Placeholder for other sections */}
       <Card className="shadow-md opacity-50">
         <CardHeader>
           <CardTitle>More Settings Coming Soon</CardTitle>

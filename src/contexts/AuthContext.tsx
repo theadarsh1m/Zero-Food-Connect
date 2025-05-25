@@ -8,12 +8,13 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
-  deleteUser as firebaseDeleteUser, // Added for account deletion
-  updateProfile as firebaseUpdateProfile, // Can be used for Auth profile, but we primarily use Firestore
+  deleteUser as firebaseDeleteUser,
+  updateProfile as firebaseUpdateProfile,
+  sendPasswordResetEmail, // Added for password reset
   type User as FirebaseUser,
 } from "firebase/auth";
-import { doc, setDoc, getDoc, updateDoc, deleteDoc } from "firebase/firestore"; // Added updateDoc, deleteDoc
-import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage"; // Added for profile picture
+import { doc, setDoc, getDoc, updateDoc, deleteDoc } from "firebase/firestore";
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { auth, db, storage } from "@/lib/firebase";
 import type { User, Role } from "@/types";
 import { useToast } from "@/hooks/use-toast";
@@ -22,15 +23,16 @@ import { useRouter } from "next/navigation";
 interface AuthContextType {
   currentUser: FirebaseUser | null;
   userData: User | null;
-  loadingAuth: boolean; // For initial auth state check
-  loadingAction: boolean; // For login/signup/logout/update actions
+  loadingAuth: boolean;
+  loadingAction: boolean;
   error: string | null;
   signupWithEmail: (email: string, pass: string, name: string, role: Role) => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
   logoutUser: () => Promise<void>;
-  updateUserProfileName: (newName: string) => Promise<void>; // New
-  updateUserProfilePicture: (file: File) => Promise<void>; // New
-  deleteUserAccount: () => Promise<void>; // New
+  updateUserProfileName: (newName: string) => Promise<void>;
+  updateUserProfilePicture: (file: File) => Promise<void>;
+  deleteUserAccount: () => Promise<void>;
+  sendPasswordResetLink: (email: string) => Promise<void>; // Added
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -55,6 +57,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           setUserData(null);
           console.warn("User document not found in Firestore for UID:", user.uid);
+          // Potentially log out user if their Firestore record is essential and missing
+          // await firebaseSignOut(auth); 
         }
       } else {
         setUserData(null);
@@ -75,10 +79,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: firebaseUser.email,
         name,
         role,
-        profilePictureUrl: null, // Initialize
-        phoneNumber: null,       // Initialize
+        photoURL: null, // Changed from profilePictureUrl
+        phoneNumber: null,
       };
       await setDoc(doc(db, "users", firebaseUser.uid), userToSave);
+      setUserData(userToSave); // Set user data immediately
       toast({ title: "Signup Successful", description: "Welcome!" });
       router.push(`/${role}`); 
     } catch (e: any) {
@@ -107,11 +112,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (userDocSnap.exists()) {
         const fetchedUserData = userDocSnap.data() as User;
+        setUserData(fetchedUserData); // Set user data immediately
         toast({ title: "Login Successful", description: "Welcome back!" });
         router.push(`/${fetchedUserData.role}`); 
       } else {
-        console.error(`User document not found in Firestore for UID: ${firebaseUser.uid}.`);
-        await firebaseSignOut(auth);
+        console.error(`User document not found in Firestore for UID: ${firebaseUser.uid}. Logging out.`);
+        await firebaseSignOut(auth); // Log out user if their Firestore profile is missing
         const specificErrorMsg = "Your user profile data is incomplete. Please try signing up again or contact support.";
         setError(specificErrorMsg); 
         toast({ title: "Login Issue", description: specificErrorMsg, variant: "destructive", duration: 7000 });
@@ -151,6 +157,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     try {
       await firebaseSignOut(auth);
+      setCurrentUser(null); // Clear current user
+      setUserData(null);    // Clear user data
       toast({ title: "Logged Out", description: "You have been successfully logged out." });
       router.push("/login"); 
     } catch (e: any) {
@@ -191,42 +199,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoadingAction(true);
     setError(null);
     try {
-      // Delete old profile picture if it exists
-      if (userData.profilePictureUrl) {
-        try {
-          // Derive path from URL - This is a simplistic approach and might need adjustment
-          // based on how you store paths or if you store paths separately.
-          // Assuming URL is like https://firebasestorage.googleapis.com/v0/b/YOUR_BUCKET/o/profile_pictures%2FUSER_ID%2FFILE_NAME?alt=media
-          // This is fragile. Better to store the storage path in Firestore if you need to delete.
-          // For simplicity, if the URL structure is consistent:
-          const oldImagePath = `profile_pictures/${currentUser.uid}/${userData.profilePictureUrl.split('%2F').pop()?.split('?')[0]}`;
-          if (oldImagePath.includes(currentUser.uid)) { // Basic check
-            const oldImageRef = storageRef(storage, oldImagePath);
-            // await deleteObject(oldImageRef); // Commented out due to path fragility
-          }
-        } catch (deleteError) {
-          console.warn("Could not delete old profile picture:", deleteError);
-          // Non-fatal, continue with upload
-        }
-      }
-      
-      const imagePath = `profile_pictures/${currentUser.uid}/${file.name}`;
+      // New uploads will overwrite the file at this specific path.
+      const imagePath = `user_profiles/${currentUser.uid}/profile.jpg`; // Fixed path as requested
       const imageRef = storageRef(storage, imagePath);
-      await uploadBytes(imageRef, file);
+      
+      // Upload the file, Firebase Storage will use the contentType from the File object if not specified,
+      // or you can specify it like: { contentType: file.type }
+      await uploadBytes(imageRef, file, { contentType: file.type });
       const downloadURL = await getDownloadURL(imageRef);
 
       const userDocRef = doc(db, "users", currentUser.uid);
-      await updateDoc(userDocRef, { profilePictureUrl: downloadURL });
-      setUserData(prev => prev ? { ...prev, profilePictureUrl: downloadURL } : null);
+      await updateDoc(userDocRef, { photoURL: downloadURL }); // Changed to photoURL
+      setUserData(prev => prev ? { ...prev, photoURL: downloadURL } : null); // Changed to photoURL
 
       toast({ title: "Success", description: "Profile picture updated." });
-    } catch (e: any)
-      {
+    } catch (e: any) {
       console.error("Update profile picture error:", e);
       setError(e.message || "Failed to update profile picture.");
       toast({ title: "Update Failed", description: e.message || "Please try again.", variant: "destructive" });
     } finally {
       setLoadingAction(false);
+    }
+  };
+  
+  const sendPasswordResetLink = async (email: string) => {
+    if (!email) {
+        toast({ title: "Error", description: "Email is required.", variant: "destructive"});
+        return;
+    }
+    setLoadingAction(true);
+    setError(null);
+    try {
+        await sendPasswordResetEmail(auth, email);
+        toast({ title: "Password Reset Email Sent", description: "Check your inbox for a password reset link."});
+    } catch (e: any) {
+        console.error("Password reset error:", e);
+        setError(e.message || "Failed to send password reset email.");
+        toast({ title: "Error", description: e.message || "Failed to send reset link.", variant: "destructive"});
+    } finally {
+        setLoadingAction(false);
     }
   };
 
@@ -242,14 +253,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userDocRef = doc(db, "users", currentUser.uid);
       await deleteDoc(userDocRef);
 
+      // Optional: Delete user's profile picture from Storage
+      try {
+        const imagePath = `user_profiles/${currentUser.uid}/profile.jpg`;
+        const imageRefToDelete = storageRef(storage, imagePath);
+        await deleteObject(imageRefToDelete);
+      } catch (storageError: any) {
+        // If the file doesn't exist or another error occurs, log it but don't block account deletion.
+        if (storageError.code !== 'storage/object-not-found') {
+            console.warn("Could not delete profile picture during account deletion:", storageError);
+        }
+      }
+      
       // 2. Delete user from Firebase Authentication
-      // This operation is sensitive and might require recent sign-in.
-      // If it fails, user might need to re-authenticate.
       await firebaseDeleteUser(currentUser);
       
-      // No need to setCurrentUser(null) or setUserData(null) as onAuthStateChanged will trigger
+      // Auth state will change via onAuthStateChanged, which will update currentUser and userData
       toast({ title: "Account Deleted", description: "Your account has been successfully deleted." });
-      router.push("/signup"); // Redirect to signup or home page
+      // No need to push here, onAuthStateChanged will lead to ProtectedAppLayout redirecting if currentUser becomes null
     } catch (e: any) {
       console.error("Delete account error:", e);
       let userMessage = e.message || "Failed to delete account.";
@@ -258,6 +279,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setError(userMessage);
       toast({ title: "Deletion Failed", description: userMessage, variant: "destructive" });
+      // If deletion fails, user is still logged in. Don't clear state here.
     } finally {
       setLoadingAction(false);
     }
@@ -276,6 +298,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     updateUserProfileName,
     updateUserProfilePicture,
     deleteUserAccount,
+    sendPasswordResetLink,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
